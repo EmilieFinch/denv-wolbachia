@@ -28,11 +28,10 @@ update(sim_year) <- floor((time)/365 + 1) # track year of simulation, assuming a
 ## Demog & serotype parameters
 n_age <- parameter(80)
 n_histories <- 15
-n_strains <- parameter() #total number of strains modelled
-r0 <- parameter() #input strain-specific R0 (e.g. each strain has this R0 when introduced alone)
+n_strains <- 60 #total number of strains modelled
+r0 <- parameter() # input strain-specific R0 (e.g. each strain has this R0 when introduced alone)
 gamma <- parameter(0.2)
 N_init <- parameter() # initial population size by age
-
 ## Wolbachia parameters
 wol_on <- parameter()
 wol_start <- parameter()
@@ -42,17 +41,18 @@ wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
 #### Core equations ####
 update(S[]) <- S[i] - S_out[i]
-update(I[,1,]) <- I[i,j,k] + n_SI[i,k]
-update(I[,2:n_histories,]) <- I[i,j,k] + n_RI[i,j-1,k]
-update(C[,]) <- C[i,j] + n_IC[i,j]
-update(R[,]) <- R[i,j] + n_CR[i,j] - R_out[i,j]
+update(I[,1,]) <- I[i,j,k] - I_out[i,j,k] + n_SI[i,k]
+update(I[,2:n_histories,]) <- I[i,j,k] - I_out[i,j,k] + n_RI[i,j-1,k]
+update(C[,]) <- C[i,j] - n_CR[i,j] + n_IC[i,j] 
+update(R[,]) <- R[i,j] - R_out[i,j] + n_CR[i,j] 
 update(N[]) <- S[i] + sum(I[i,,]) + sum(C[i,]) + sum(R[i,])
 
 #### Calculate individual probabilities of transition ####
 beta[] <- r0*gamma
 beta_adj[] <- if(wol_on == 1 && time >= wol_start) wol_inhib[i]*beta[i] else beta[i]
 
-lambda[] <- beta_adj[i] * sum(I[,,i])/sum(N[]) # strain specific lambda
+lambda[] <- beta_adj[i] * sum(I[,,i])/sum(N_init[]) # strain specific lambda
+lambda[] <- lambda[i] 
 lambda_1 <- sum(lambda[1:20]) # DENV1 lambda
 lambda_2 <- sum(lambda[21:40]) # DENV2 lambda
 lambda_3 <- sum(lambda[41:50]) # DENV3 lambda
@@ -62,55 +62,73 @@ lambda_total <- sum(lambda[])
 
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
-nu <- dt/365 # duration of cross protection of a year 
+nu <- 1/365  # duration of cross protection of a year 
+
+print("N: {N[11]},  I: {I[11,1,1]}, S: {S[11]}, C:{C[11,1]}, R:{R[11,1]}")
 
 #### Draw number moving between compartments ####
 
 S_out[] <- Binomial(S[i], 1 - exp(-lambda_total*dt)) # chain binomial for n_SI below
+I_out[,,] <- Binomial(I[i,j,k], p_IC)
 
-n_IC[, 1] <- Binomial(sum(I[i, 1, 1:20]), p_IC) # seronaive infected with DENV1
-n_IC[, 2] <- Binomial(sum(I[i, 1, 21:40]), p_IC) # seronaive infected with DENV2
-n_IC[, 3] <- Binomial(sum(I[i, 1, 41:50]), p_IC) # seronaive infected with DENV3
-n_IC[, 4] <- Binomial(sum(I[i, 1, 51:60]), p_IC) # seronaive infected with DENV4
-n_IC[, 5] <- Binomial(sum(I[i, 2, 21:40]) + sum(I[i, 3, 1:20]), p_IC) # Prev DENV1 infected with DENV2 and vice versa
-n_IC[, 6] <- Binomial(sum(I[i, 2, 41:50]) + sum(I[i, 4, 1:20]), p_IC) # Prev DENV1 infected with DENV3 and vice versa
-n_IC[, 7] <- Binomial(sum(I[i, 2, 51:60]) + sum(I[i, 5, 1:20]), p_IC) # Prev DENV1 infected with DENV4 and vice versa
-n_IC[, 8] <- Binomial(sum(I[i, 3, 41:50]) + sum(I[i, 4, 21:40]), p_IC) # Prev DENV2 infected with DENV3 and vice versa
-n_IC[, 9] <- Binomial(sum(I[i, 3, 51:60]) + sum(I[i, 5, 21:40]), p_IC) # Prev DENV2 infected with DENV4 and vice versa
-n_IC[, 10] <- Binomial(sum(I[i, 4, 51:60]) + sum(I[i, 5, 41:50]), p_IC) # Prev DENV3 infected with DENV4 and vice versa
-n_IC[, 11] <- Binomial(sum(I[i, 6, 41:50]) + sum(I[i, 7, 21:40]) + sum(I[i, 9, 1:20]), p_IC) # Prev 2&3 infected with 1, Prev 1&2 infected with 3 and prev 1&3 infected with 2
-n_IC[, 12] <- Binomial(sum(I[i, 6, 51:60]) + sum(I[i, 8, 21:40]) + sum(I[i, 10, 1:20]), p_IC) # Prev 2&4 infected with 1, Prev 1&4 infected with 2 and prev 1&2 infected with 4
-n_IC[, 13] <- Binomial(sum(I[i, 7, 51:60]) + sum(I[i, 8, 41:50]) + sum(I[i, 11, 1:20]), p_IC) # Prev 3&4 infected with 1, Prev 1&4 infected with 3 and prev 1&3 infected with 4
-n_IC[, 14] <- Binomial(sum(I[i, 9, 51:60]) + sum(I[i, 10, 41:50]) + sum(I[i, 11, 21:40]), p_IC) # Prev 3&4 infected with 2, Prev 2&4 infected with 3 and prev 2&3 infected with 4
-n_IC[, 15] <- Binomial(sum(I[i, 12, 51:60]) + sum(I[i, 13, 41:50]) + sum(I[i, 14, 21:40]) + sum(I[i, 15, 1:20]), p_IC) # Prev 1&2&3 infected with 4, prev 1&3&4 infected with 2, prev 2&3&4 infected with 1
+n_IC[, 1] <- sum(I_out[i, 1, 1:20]) # seronaive infected with DENV1
+n_IC[, 2] <- sum(I_out[i, 1, 21:40]) # seronaive infected with DENV2
+n_IC[, 3] <- sum(I_out[i, 1, 41:50]) # seronaive infected with DENV3
+n_IC[, 4] <- sum(I_out[i, 1, 51:60]) # seronaive infected with DENV4
+n_IC[, 5] <- sum(I_out[i, 2, 21:40]) + sum(I_out[i, 3, 1:20]) # Prev DENV1 infected with DENV2 and vice versa
+n_IC[, 6] <- sum(I_out[i, 2, 41:50]) + sum(I_out[i, 4, 1:20]) # Prev DENV1 infected with DENV3 and vice versa
+n_IC[, 7] <- sum(I_out[i, 2, 51:60]) + sum(I_out[i, 5, 1:20]) # Prev DENV1 infected with DENV4 and vice versa
+n_IC[, 8] <- sum(I_out[i, 3, 41:50]) + sum(I_out[i, 4, 21:40]) # Prev DENV2 infected with DENV3 and vice versa
+n_IC[, 9] <- sum(I_out[i, 3, 51:60]) + sum(I_out[i, 5, 21:40]) # Prev DENV2 infected with DENV4 and vice versa
+n_IC[, 10] <- sum(I_out[i, 4, 51:60]) + sum(I_out[i, 5, 41:50]) # Prev DENV3 infected with DENV4 and vice versa
+n_IC[, 11] <- sum(I_out[i, 6, 41:50]) + sum(I_out[i, 7, 21:40]) + sum(I_out[i, 9, 1:20]) # Prev 2&3 infected with 1, Prev 1&2 infected with 3 and prev 1&3 infected with 2
+n_IC[, 12] <- sum(I_out[i, 6, 51:60]) + sum(I_out[i, 8, 21:40]) + sum(I_out[i, 10, 1:20]) # Prev 2&4 infected with 1, Prev 1&4 infected with 2 and prev 1&2 infected with 4
+n_IC[, 13] <- sum(I_out[i, 7, 51:60]) + sum(I_out[i, 8, 41:50]) + sum(I_out[i, 11, 1:20]) # Prev 3&4 infected with 1, Prev 1&4 infected with 3 and prev 1&3 infected with 4
+n_IC[, 14] <- sum(I_out[i, 9, 51:60]) + sum(I_out[i, 10, 41:50]) + sum(I_out[i, 11, 21:40]) # Prev 3&4 infected with 2, Prev 2&4 infected with 3 and prev 2&3 infected with 4
+n_IC[, 15] <- sum(I_out[i, 12, 51:60]) + sum(I_out[i, 13, 41:50]) + sum(I_out[i, 14, 21:40]) + sum(I_out[i, 15, 1:20]) # Prev 1&2&3 infected with 4, prev 1&3&4 infected with 2, prev 2&3&4 infected with 1
 n_CR[,] <- Binomial(C[i,j], p_CR)
 
+R_out[, 1] <- Binomial(R[i, 1], 1 - exp(- (lambda_2 + lambda_3 + lambda_4)*dt))
+R_out[, 2] <- Binomial(R[i, 2], 1 - exp(- (lambda_1 + lambda_3 + lambda_4)*dt))
+R_out[, 3] <- Binomial(R[i, 3], 1 - exp(- (lambda_1 + lambda_2 + lambda_4)*dt))
+R_out[, 4] <- Binomial(R[i, 4], 1 - exp(- (lambda_1 + lambda_2 + lambda_3)*dt))
+R_out[, 5] <- Binomial(R[i, 5], 1 - exp(- (lambda_3 + lambda_4)*dt))
+R_out[, 6] <- Binomial(R[i, 6], 1 - exp(- (lambda_2 + lambda_4)*dt))
+R_out[, 7] <- Binomial(R[i, 7], 1 - exp(- (lambda_2 + lambda_3)*dt))
+R_out[, 8] <- Binomial(R[i, 8], 1 - exp(- (lambda_1 + lambda_4)*dt))
+R_out[, 9] <- Binomial(R[i, 9], 1 - exp(- (lambda_1 + lambda_3)*dt))
+R_out[, 10] <- Binomial(R[i, 10], 1 - exp(- (lambda_1 + lambda_2)*dt))
+R_out[, 11] <- Binomial(R[i, 11], 1 - exp(- (lambda_4)*dt))
+R_out[, 12] <- Binomial(R[i, 12], 1 - exp(- (lambda_3)*dt))
+R_out[, 13] <- Binomial(R[i, 13], 1 - exp(- (lambda_2)*dt))
+R_out[, 14] <- Binomial(R[i, 14], 1 - exp(- (lambda_1)*dt)) # chain binomial for n_RI below
 
+#### Outputs
+## Infections by strain
 
-R_out[, 1] <- Binomial(R[i, 1], 1 - exp(- (lambda_2 + lambda_3 + lambda_4)* dt))
-R_out[, 2] <- Binomial(R[i, 2], 1 - exp(- (lambda_1 + lambda_3 + lambda_4)* dt))
-R_out[, 3] <- Binomial(R[i, 3], 1 - exp(- (lambda_1 + lambda_2 + lambda_4)* dt))
-R_out[, 4] <- Binomial(R[i, 4], 1 - exp(- (lambda_1 + lambda_2 + lambda_3)* dt))
-R_out[, 5] <- Binomial(R[i, 5], 1 - exp(- (lambda_3 + lambda_4)* dt))
-R_out[, 6] <- Binomial(R[i, 6], 1 - exp(- (lambda_2 + lambda_4)* dt))
-R_out[, 7] <- Binomial(R[i, 7], 1 - exp(- (lambda_2 + lambda_3)* dt))
-R_out[, 8] <- Binomial(R[i, 8], 1 - exp(- (lambda_1 + lambda_4)* dt))
-R_out[, 9] <- Binomial(R[i, 9], 1 - exp(- (lambda_1 + lambda_3)* dt))
-R_out[, 10] <- Binomial(R[i, 10], 1 - exp(- (lambda_1 + lambda_2)* dt))
-R_out[, 11] <- Binomial(R[i, 11], 1 - exp(- (lambda_4)* dt))
-R_out[, 12] <- Binomial(R[i, 12], 1 - exp(- (lambda_3)* dt))
-R_out[, 13] <- Binomial(R[i, 13], 1 - exp(- (lambda_2)* dt))
-R_out[, 14] <- Binomial(R[i, 14], 1 - exp(- (lambda_1)* dt)) # chain binomial for n_RI below
+update(inf[]) <- sum(I[,,i])
+update(inf_age[]) <- sum(I[i,,])
+
+## Immune states
+update(prior_infection[1]) <- sum(S[])
+update(prior_infection[2]) <- sum(R[,1:4])
+update(prior_infection[3]) <- sum(R[,5:10])
+update(prior_infection[4]) <- sum(R[,11:14])
+update(prior_infection[5]) <- sum(R[,15])
 
 #### Initial states & dimensions ####
 initial(N[]) <- N_init[i]
 initial(S[]) <- if(i == 11) N_init[i] - 60 else N_init[i]
-initial(I[11,1,1:20]) <- 1
-initial(I[11,2,21:40]) <- 1
-initial(I[11,3,41:50]) <- 1
-initial(I[11,4,51:60]) <- 1
+initial(I[11,1,1:20]) <- 1000
+initial(I[11,2,21:40]) <- 1000
+initial(I[11,3,41:50]) <- 1000
+initial(I[11,4,51:60]) <- 1000
+
 initial(C[,]) <- 0
 initial(R[,]) <- 0
+initial(inf[]) <- 0
+initial(inf_age[]) <- 0
+initial(prior_infection[]) <- 0
 
 dim(S) <- n_age
 dim(I) <- c(n_age, n_histories, n_strains)
@@ -122,497 +140,502 @@ dim(beta) <- n_strains
 dim(beta_adj) <- n_strains
 dim(wol_inhib) <- n_strains
 dim(lambda) <- n_strains
+dim(I_out) <- c(n_age, n_histories, n_strains)
 dim(R_out) <- c(n_age, n_histories)
 dim(n_SI) <- c(n_age, n_strains)
 dim(n_RI) <- c(n_age, n_histories, n_strains)
 dim(n_IC) <- c(n_age, n_histories)
 dim(n_CR) <- c(n_age, n_histories)
 dim(N) <- n_age
-
+dim(inf) <- n_strains
+dim(inf_age) <- n_age
+dim(prior_infection) <- c(5)
 
 ## Chain binomial for strain specific infections ## 
 ## From susceptible
-n_SI[, 1] <- Binomial(S_out[i], lambda[1] / sum(lambda[1:60]))
-n_SI[, 2] <- Binomial(S_out[i] - sum(n_SI[i, 1:1]), lambda[2] / sum(lambda[2:60]))
-n_SI[, 3] <- Binomial(S_out[i] - sum(n_SI[i, 1:2]), lambda[3] / sum(lambda[3:60]))
-n_SI[, 4] <- Binomial(S_out[i] - sum(n_SI[i, 1:3]), lambda[4] / sum(lambda[4:60]))
-n_SI[, 5] <- Binomial(S_out[i] - sum(n_SI[i, 1:4]), lambda[5] / sum(lambda[5:60]))
-n_SI[, 6] <- Binomial(S_out[i] - sum(n_SI[i, 1:5]), lambda[6] / sum(lambda[6:60]))
-n_SI[, 7] <- Binomial(S_out[i] - sum(n_SI[i, 1:6]), lambda[7] / sum(lambda[7:60]))
-n_SI[, 8] <- Binomial(S_out[i] - sum(n_SI[i, 1:7]), lambda[8] / sum(lambda[8:60]))
-n_SI[, 9] <- Binomial(S_out[i] - sum(n_SI[i, 1:8]), lambda[9] / sum(lambda[9:60]))
-n_SI[, 10] <- Binomial(S_out[i] - sum(n_SI[i, 1:9]), lambda[10] / sum(lambda[10:60]))
-n_SI[, 11] <- Binomial(S_out[i] - sum(n_SI[i, 1:10]), lambda[11] / sum(lambda[11:60]))
-n_SI[, 12] <- Binomial(S_out[i] - sum(n_SI[i, 1:11]), lambda[12] / sum(lambda[12:60]))
-n_SI[, 13] <- Binomial(S_out[i] - sum(n_SI[i, 1:12]), lambda[13] / sum(lambda[13:60]))
-n_SI[, 14] <- Binomial(S_out[i] - sum(n_SI[i, 1:13]), lambda[14] / sum(lambda[14:60]))
-n_SI[, 15] <- Binomial(S_out[i] - sum(n_SI[i, 1:14]), lambda[15] / sum(lambda[15:60]))
-n_SI[, 16] <- Binomial(S_out[i] - sum(n_SI[i, 1:15]), lambda[16] / sum(lambda[16:60]))
-n_SI[, 17] <- Binomial(S_out[i] - sum(n_SI[i, 1:16]), lambda[17] / sum(lambda[17:60]))
-n_SI[, 18] <- Binomial(S_out[i] - sum(n_SI[i, 1:17]), lambda[18] / sum(lambda[18:60]))
-n_SI[, 19] <- Binomial(S_out[i] - sum(n_SI[i, 1:18]), lambda[19] / sum(lambda[19:60]))
-n_SI[, 20] <- Binomial(S_out[i] - sum(n_SI[i, 1:19]), lambda[20] / sum(lambda[20:60]))
-n_SI[, 21] <- Binomial(S_out[i] - sum(n_SI[i, 1:20]), lambda[21] / sum(lambda[21:60]))
-n_SI[, 22] <- Binomial(S_out[i] - sum(n_SI[i, 1:21]), lambda[22] / sum(lambda[22:60]))
-n_SI[, 23] <- Binomial(S_out[i] - sum(n_SI[i, 1:22]), lambda[23] / sum(lambda[23:60]))
-n_SI[, 24] <- Binomial(S_out[i] - sum(n_SI[i, 1:23]), lambda[24] / sum(lambda[24:60]))
-n_SI[, 25] <- Binomial(S_out[i] - sum(n_SI[i, 1:24]), lambda[25] / sum(lambda[25:60]))
-n_SI[, 26] <- Binomial(S_out[i] - sum(n_SI[i, 1:25]), lambda[26] / sum(lambda[26:60]))
-n_SI[, 27] <- Binomial(S_out[i] - sum(n_SI[i, 1:26]), lambda[27] / sum(lambda[27:60]))
-n_SI[, 28] <- Binomial(S_out[i] - sum(n_SI[i, 1:27]), lambda[28] / sum(lambda[28:60]))
-n_SI[, 29] <- Binomial(S_out[i] - sum(n_SI[i, 1:28]), lambda[29] / sum(lambda[29:60]))
-n_SI[, 30] <- Binomial(S_out[i] - sum(n_SI[i, 1:29]), lambda[30] / sum(lambda[30:60]))
-n_SI[, 31] <- Binomial(S_out[i] - sum(n_SI[i, 1:30]), lambda[31] / sum(lambda[31:60]))
-n_SI[, 32] <- Binomial(S_out[i] - sum(n_SI[i, 1:31]), lambda[32] / sum(lambda[32:60]))
-n_SI[, 33] <- Binomial(S_out[i] - sum(n_SI[i, 1:32]), lambda[33] / sum(lambda[33:60]))
-n_SI[, 34] <- Binomial(S_out[i] - sum(n_SI[i, 1:33]), lambda[34] / sum(lambda[34:60]))
-n_SI[, 35] <- Binomial(S_out[i] - sum(n_SI[i, 1:34]), lambda[35] / sum(lambda[35:60]))
-n_SI[, 36] <- Binomial(S_out[i] - sum(n_SI[i, 1:35]), lambda[36] / sum(lambda[36:60]))
-n_SI[, 37] <- Binomial(S_out[i] - sum(n_SI[i, 1:36]), lambda[37] / sum(lambda[37:60]))
-n_SI[, 38] <- Binomial(S_out[i] - sum(n_SI[i, 1:37]), lambda[38] / sum(lambda[38:60]))
-n_SI[, 39] <- Binomial(S_out[i] - sum(n_SI[i, 1:38]), lambda[39] / sum(lambda[39:60]))
-n_SI[, 40] <- Binomial(S_out[i] - sum(n_SI[i, 1:39]), lambda[40] / sum(lambda[40:60]))
-n_SI[, 41] <- Binomial(S_out[i] - sum(n_SI[i, 1:40]), lambda[41] / sum(lambda[41:60]))
-n_SI[, 42] <- Binomial(S_out[i] - sum(n_SI[i, 1:41]), lambda[42] / sum(lambda[42:60]))
-n_SI[, 43] <- Binomial(S_out[i] - sum(n_SI[i, 1:42]), lambda[43] / sum(lambda[43:60]))
-n_SI[, 44] <- Binomial(S_out[i] - sum(n_SI[i, 1:43]), lambda[44] / sum(lambda[44:60]))
-n_SI[, 45] <- Binomial(S_out[i] - sum(n_SI[i, 1:44]), lambda[45] / sum(lambda[45:60]))
-n_SI[, 46] <- Binomial(S_out[i] - sum(n_SI[i, 1:45]), lambda[46] / sum(lambda[46:60]))
-n_SI[, 47] <- Binomial(S_out[i] - sum(n_SI[i, 1:46]), lambda[47] / sum(lambda[47:60]))
-n_SI[, 48] <- Binomial(S_out[i] - sum(n_SI[i, 1:47]), lambda[48] / sum(lambda[48:60]))
-n_SI[, 49] <- Binomial(S_out[i] - sum(n_SI[i, 1:48]), lambda[49] / sum(lambda[49:60]))
-n_SI[, 50] <- Binomial(S_out[i] - sum(n_SI[i, 1:49]), lambda[50] / sum(lambda[50:60]))
-n_SI[, 51] <- Binomial(S_out[i] - sum(n_SI[i, 1:50]), lambda[51] / sum(lambda[51:60]))
-n_SI[, 52] <- Binomial(S_out[i] - sum(n_SI[i, 1:51]), lambda[52] / sum(lambda[52:60]))
-n_SI[, 53] <- Binomial(S_out[i] - sum(n_SI[i, 1:52]), lambda[53] / sum(lambda[53:60]))
-n_SI[, 54] <- Binomial(S_out[i] - sum(n_SI[i, 1:53]), lambda[54] / sum(lambda[54:60]))
-n_SI[, 55] <- Binomial(S_out[i] - sum(n_SI[i, 1:54]), lambda[55] / sum(lambda[55:60]))
-n_SI[, 56] <- Binomial(S_out[i] - sum(n_SI[i, 1:55]), lambda[56] / sum(lambda[56:60]))
-n_SI[, 57] <- Binomial(S_out[i] - sum(n_SI[i, 1:56]), lambda[57] / sum(lambda[57:60]))
-n_SI[, 58] <- Binomial(S_out[i] - sum(n_SI[i, 1:57]), lambda[58] / sum(lambda[58:60]))
-n_SI[, 59] <- Binomial(S_out[i] - sum(n_SI[i, 1:58]), lambda[59] / sum(lambda[59:60]))
+n_SI[, 1] <- if (sum(lambda[1:60]) > 0) Binomial(S_out[i], lambda[1] / sum(lambda[1:60])) else 0
+n_SI[, 2] <- if (sum(lambda[2:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:1]), lambda[2] / sum(lambda[2:60])) else 0
+n_SI[, 3] <- if (sum(lambda[3:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:2]), lambda[3] / sum(lambda[3:60])) else 0
+n_SI[, 4] <- if (sum(lambda[4:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:3]), lambda[4] / sum(lambda[4:60])) else 0
+n_SI[, 5] <- if (sum(lambda[5:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:4]), lambda[5] / sum(lambda[5:60])) else 0
+n_SI[, 6] <- if (sum(lambda[6:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:5]), lambda[6] / sum(lambda[6:60])) else 0
+n_SI[, 7] <- if (sum(lambda[7:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:6]), lambda[7] / sum(lambda[7:60])) else 0
+n_SI[, 8] <- if (sum(lambda[8:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:7]), lambda[8] / sum(lambda[8:60])) else 0
+n_SI[, 9] <- if (sum(lambda[9:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:8]), lambda[9] / sum(lambda[9:60])) else 0
+n_SI[, 10] <- if (sum(lambda[10:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:9]), lambda[10] / sum(lambda[10:60])) else 0
+n_SI[, 11] <- if (sum(lambda[11:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:10]), lambda[11] / sum(lambda[11:60])) else 0
+n_SI[, 12] <- if (sum(lambda[12:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:11]), lambda[12] / sum(lambda[12:60])) else 0
+n_SI[, 13] <- if (sum(lambda[13:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:12]), lambda[13] / sum(lambda[13:60])) else 0
+n_SI[, 14] <- if (sum(lambda[14:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:13]), lambda[14] / sum(lambda[14:60])) else 0
+n_SI[, 15] <- if (sum(lambda[15:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:14]), lambda[15] / sum(lambda[15:60])) else 0
+n_SI[, 16] <- if (sum(lambda[16:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:15]), lambda[16] / sum(lambda[16:60])) else 0
+n_SI[, 17] <- if (sum(lambda[17:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:16]), lambda[17] / sum(lambda[17:60])) else 0
+n_SI[, 18] <- if (sum(lambda[18:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:17]), lambda[18] / sum(lambda[18:60])) else 0
+n_SI[, 19] <- if (sum(lambda[19:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:18]), lambda[19] / sum(lambda[19:60])) else 0
+n_SI[, 20] <- if (sum(lambda[20:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:19]), lambda[20] / sum(lambda[20:60])) else 0
+n_SI[, 21] <- if (sum(lambda[21:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:20]), lambda[21] / sum(lambda[21:60])) else 0
+n_SI[, 22] <- if (sum(lambda[22:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:21]), lambda[22] / sum(lambda[22:60])) else 0
+n_SI[, 23] <- if (sum(lambda[23:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:22]), lambda[23] / sum(lambda[23:60])) else 0
+n_SI[, 24] <- if (sum(lambda[24:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:23]), lambda[24] / sum(lambda[24:60])) else 0
+n_SI[, 25] <- if (sum(lambda[25:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:24]), lambda[25] / sum(lambda[25:60])) else 0
+n_SI[, 26] <- if (sum(lambda[26:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:25]), lambda[26] / sum(lambda[26:60])) else 0
+n_SI[, 27] <- if (sum(lambda[27:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:26]), lambda[27] / sum(lambda[27:60])) else 0
+n_SI[, 28] <- if (sum(lambda[28:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:27]), lambda[28] / sum(lambda[28:60])) else 0
+n_SI[, 29] <- if (sum(lambda[29:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:28]), lambda[29] / sum(lambda[29:60])) else 0
+n_SI[, 30] <- if (sum(lambda[30:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:29]), lambda[30] / sum(lambda[30:60])) else 0
+n_SI[, 31] <- if (sum(lambda[31:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:30]), lambda[31] / sum(lambda[31:60])) else 0
+n_SI[, 32] <- if (sum(lambda[32:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:31]), lambda[32] / sum(lambda[32:60])) else 0
+n_SI[, 33] <- if (sum(lambda[33:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:32]), lambda[33] / sum(lambda[33:60])) else 0
+n_SI[, 34] <- if (sum(lambda[34:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:33]), lambda[34] / sum(lambda[34:60])) else 0
+n_SI[, 35] <- if (sum(lambda[35:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:34]), lambda[35] / sum(lambda[35:60])) else 0
+n_SI[, 36] <- if (sum(lambda[36:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:35]), lambda[36] / sum(lambda[36:60])) else 0
+n_SI[, 37] <- if (sum(lambda[37:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:36]), lambda[37] / sum(lambda[37:60])) else 0
+n_SI[, 38] <- if (sum(lambda[38:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:37]), lambda[38] / sum(lambda[38:60])) else 0
+n_SI[, 39] <- if (sum(lambda[39:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:38]), lambda[39] / sum(lambda[39:60])) else 0
+n_SI[, 40] <- if (sum(lambda[40:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:39]), lambda[40] / sum(lambda[40:60])) else 0
+n_SI[, 41] <- if (sum(lambda[41:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:40]), lambda[41] / sum(lambda[41:60])) else 0
+n_SI[, 42] <- if (sum(lambda[42:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:41]), lambda[42] / sum(lambda[42:60])) else 0
+n_SI[, 43] <- if (sum(lambda[43:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:42]), lambda[43] / sum(lambda[43:60])) else 0
+n_SI[, 44] <- if (sum(lambda[44:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:43]), lambda[44] / sum(lambda[44:60])) else 0
+n_SI[, 45] <- if (sum(lambda[45:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:44]), lambda[45] / sum(lambda[45:60])) else 0
+n_SI[, 46] <- if (sum(lambda[46:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:45]), lambda[46] / sum(lambda[46:60])) else 0
+n_SI[, 47] <- if (sum(lambda[47:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:46]), lambda[47] / sum(lambda[47:60])) else 0
+n_SI[, 48] <- if (sum(lambda[48:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:47]), lambda[48] / sum(lambda[48:60])) else 0
+n_SI[, 49] <- if (sum(lambda[49:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:48]), lambda[49] / sum(lambda[49:60])) else 0
+n_SI[, 50] <- if (sum(lambda[50:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:49]), lambda[50] / sum(lambda[50:60])) else 0
+n_SI[, 51] <- if (sum(lambda[51:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:50]), lambda[51] / sum(lambda[51:60])) else 0
+n_SI[, 52] <- if (sum(lambda[52:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:51]), lambda[52] / sum(lambda[52:60])) else 0
+n_SI[, 53] <- if (sum(lambda[53:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:52]), lambda[53] / sum(lambda[53:60])) else 0
+n_SI[, 54] <- if (sum(lambda[54:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:53]), lambda[54] / sum(lambda[54:60])) else 0
+n_SI[, 55] <- if (sum(lambda[55:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:54]), lambda[55] / sum(lambda[55:60])) else 0
+n_SI[, 56] <- if (sum(lambda[56:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:55]), lambda[56] / sum(lambda[56:60])) else 0
+n_SI[, 57] <- if (sum(lambda[57:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:56]), lambda[57] / sum(lambda[57:60])) else 0
+n_SI[, 58] <- if (sum(lambda[58:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:57]), lambda[58] / sum(lambda[58:60])) else 0
+n_SI[, 59] <- if (sum(lambda[59:60]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:58]), lambda[59] / sum(lambda[59:60])) else 0
 n_SI[, 60] <- S_out[i] - sum(n_SI[i, 1:59])
 
 ## After 1 infection
-n_RI[, 1, 21] <- Binomial(R_out[i, 1], lambda[21] / sum(lambda[21:60]))
-n_RI[, 1, 22] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:21]), lambda[22] / sum(lambda[22:60]))
-n_RI[, 1, 23] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:22]), lambda[23] / sum(lambda[23:60]))
-n_RI[, 1, 24] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:23]), lambda[24] / sum(lambda[24:60]))
-n_RI[, 1, 25] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:24]), lambda[25] / sum(lambda[25:60]))
-n_RI[, 1, 26] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:25]), lambda[26] / sum(lambda[26:60]))
-n_RI[, 1, 27] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:26]), lambda[27] / sum(lambda[27:60]))
-n_RI[, 1, 28] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:27]), lambda[28] / sum(lambda[28:60]))
-n_RI[, 1, 29] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:28]), lambda[29] / sum(lambda[29:60]))
-n_RI[, 1, 30] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:29]), lambda[30] / sum(lambda[30:60]))
-n_RI[, 1, 31] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:30]), lambda[31] / sum(lambda[31:60]))
-n_RI[, 1, 32] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:31]), lambda[32] / sum(lambda[32:60]))
-n_RI[, 1, 33] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:32]), lambda[33] / sum(lambda[33:60]))
-n_RI[, 1, 34] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:33]), lambda[34] / sum(lambda[34:60]))
-n_RI[, 1, 35] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:34]), lambda[35] / sum(lambda[35:60]))
-n_RI[, 1, 36] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:35]), lambda[36] / sum(lambda[36:60]))
-n_RI[, 1, 37] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:36]), lambda[37] / sum(lambda[37:60]))
-n_RI[, 1, 38] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:37]), lambda[38] / sum(lambda[38:60]))
-n_RI[, 1, 39] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:38]), lambda[39] / sum(lambda[39:60]))
-n_RI[, 1, 40] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:39]), lambda[40] / sum(lambda[40:60]))
-n_RI[, 1, 41] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:40]), lambda[41] / sum(lambda[41:60]))
-n_RI[, 1, 42] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:41]), lambda[42] / sum(lambda[42:60]))
-n_RI[, 1, 43] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:42]), lambda[43] / sum(lambda[43:60]))
-n_RI[, 1, 44] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:43]), lambda[44] / sum(lambda[44:60]))
-n_RI[, 1, 45] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:44]), lambda[45] / sum(lambda[45:60]))
-n_RI[, 1, 46] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:45]), lambda[46] / sum(lambda[46:60]))
-n_RI[, 1, 47] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:46]), lambda[47] / sum(lambda[47:60]))
-n_RI[, 1, 48] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:47]), lambda[48] / sum(lambda[48:60]))
-n_RI[, 1, 49] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:48]), lambda[49] / sum(lambda[49:60]))
-n_RI[, 1, 50] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:49]), lambda[50] / sum(lambda[50:60]))
-n_RI[, 1, 51] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:50]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 1, 52] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 1, 53] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 1, 54] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 1, 55] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 1, 56] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 1, 57] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 1, 58] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 1, 59] <- Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:58]), lambda[59] / sum(lambda[59:60]))
+
+n_RI[, 1, 21] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1], lambda[21] / sum(lambda[21:60])) else 0
+n_RI[, 1, 22] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:21]), lambda[22] / sum(lambda[21:60])) else 0
+n_RI[, 1, 23] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:22]), lambda[23] / sum(lambda[21:60])) else 0
+n_RI[, 1, 24] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:23]), lambda[24] / sum(lambda[21:60])) else 0
+n_RI[, 1, 25] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:24]), lambda[25] / sum(lambda[21:60])) else 0
+n_RI[, 1, 26] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:25]), lambda[26] / sum(lambda[21:60])) else 0
+n_RI[, 1, 27] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:26]), lambda[27] / sum(lambda[21:60])) else 0
+n_RI[, 1, 28] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:27]), lambda[28] / sum(lambda[21:60])) else 0
+n_RI[, 1, 29] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:28]), lambda[29] / sum(lambda[21:60])) else 0
+n_RI[, 1, 30] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:29]), lambda[30] / sum(lambda[21:60])) else 0
+n_RI[, 1, 31] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:30]), lambda[31] / sum(lambda[21:60])) else 0
+n_RI[, 1, 32] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:31]), lambda[32] / sum(lambda[21:60])) else 0
+n_RI[, 1, 33] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:32]), lambda[33] / sum(lambda[21:60])) else 0
+n_RI[, 1, 34] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:33]), lambda[34] / sum(lambda[21:60])) else 0
+n_RI[, 1, 35] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:34]), lambda[35] / sum(lambda[21:60])) else 0
+n_RI[, 1, 36] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:35]), lambda[36] / sum(lambda[21:60])) else 0
+n_RI[, 1, 37] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:36]), lambda[37] / sum(lambda[21:60])) else 0
+n_RI[, 1, 38] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:37]), lambda[38] / sum(lambda[21:60])) else 0
+n_RI[, 1, 39] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:38]), lambda[39] / sum(lambda[21:60])) else 0
+n_RI[, 1, 40] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:39]), lambda[40] / sum(lambda[21:60])) else 0
+n_RI[, 1, 41] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:40]), lambda[41] / sum(lambda[21:60])) else 0
+n_RI[, 1, 42] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:41]), lambda[42] / sum(lambda[21:60])) else 0
+n_RI[, 1, 43] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:42]), lambda[43] / sum(lambda[21:60])) else 0
+n_RI[, 1, 44] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:43]), lambda[44] / sum(lambda[21:60])) else 0
+n_RI[, 1, 45] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:44]), lambda[45] / sum(lambda[21:60])) else 0
+n_RI[, 1, 46] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:45]), lambda[46] / sum(lambda[21:60])) else 0
+n_RI[, 1, 47] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:46]), lambda[47] / sum(lambda[21:60])) else 0
+n_RI[, 1, 48] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:47]), lambda[48] / sum(lambda[21:60])) else 0
+n_RI[, 1, 49] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:48]), lambda[49] / sum(lambda[21:60])) else 0
+n_RI[, 1, 50] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:49]), lambda[50] / sum(lambda[21:60])) else 0
+n_RI[, 1, 51] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:50]), lambda[51] / sum(lambda[21:60])) else 0
+n_RI[, 1, 52] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:51]), lambda[52] / sum(lambda[21:60])) else 0
+n_RI[, 1, 53] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:52]), lambda[53] / sum(lambda[21:60])) else 0
+n_RI[, 1, 54] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:53]), lambda[54] / sum(lambda[21:60])) else 0
+n_RI[, 1, 55] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:54]), lambda[55] / sum(lambda[21:60])) else 0
+n_RI[, 1, 56] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:55]), lambda[56] / sum(lambda[21:60])) else 0
+n_RI[, 1, 57] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:56]), lambda[57] / sum(lambda[21:60])) else 0
+n_RI[, 1, 58] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:57]), lambda[58] / sum(lambda[21:60])) else 0
+n_RI[, 1, 59] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 1] - sum(n_RI[i, 1, 21:58]), lambda[59] / sum(lambda[21:60])) else 0
 n_RI[, 1, 60] <- R_out[i, 1] - sum(n_RI[i, 1, 21:59])
-n_RI[, 2, 1] <- Binomial(R_out[i, 2], lambda[1] / sum(lambda[1:60]))
-n_RI[, 2, 2] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:1]), lambda[2] / sum(lambda[2:60]))
-n_RI[, 2, 3] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:2]), lambda[3] / sum(lambda[3:60]))
-n_RI[, 2, 4] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:3]), lambda[4] / sum(lambda[4:60]))
-n_RI[, 2, 5] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:4]), lambda[5] / sum(lambda[5:60]))
-n_RI[, 2, 6] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:5]), lambda[6] / sum(lambda[6:60]))
-n_RI[, 2, 7] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:6]), lambda[7] / sum(lambda[7:60]))
-n_RI[, 2, 8] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:7]), lambda[8] / sum(lambda[8:60]))
-n_RI[, 2, 9] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:8]), lambda[9] / sum(lambda[9:60]))
-n_RI[, 2, 10] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:9]), lambda[10] / sum(lambda[10:60]))
-n_RI[, 2, 11] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:10]), lambda[11] / sum(lambda[11:60]))
-n_RI[, 2, 12] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:11]), lambda[12] / sum(lambda[12:60]))
-n_RI[, 2, 13] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:12]), lambda[13] / sum(lambda[13:60]))
-n_RI[, 2, 14] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:13]), lambda[14] / sum(lambda[14:60]))
-n_RI[, 2, 15] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:14]), lambda[15] / sum(lambda[15:60]))
-n_RI[, 2, 16] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:15]), lambda[16] / sum(lambda[16:60]))
-n_RI[, 2, 17] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:16]), lambda[17] / sum(lambda[17:60]))
-n_RI[, 2, 18] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:17]), lambda[18] / sum(lambda[18:60]))
-n_RI[, 2, 19] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:18]), lambda[19] / sum(lambda[19:60]))
-n_RI[, 2, 20] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:19]), lambda[20] / sum(lambda[20:60]))
-n_RI[, 2, 41] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:20]), lambda[41] / sum(lambda[41:60]))
-n_RI[, 2, 42] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:41]), lambda[42] / sum(lambda[42:60]))
-n_RI[, 2, 43] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:42]), lambda[43] / sum(lambda[43:60]))
-n_RI[, 2, 44] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:43]), lambda[44] / sum(lambda[44:60]))
-n_RI[, 2, 45] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:44]), lambda[45] / sum(lambda[45:60]))
-n_RI[, 2, 46] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:45]), lambda[46] / sum(lambda[46:60]))
-n_RI[, 2, 47] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:46]), lambda[47] / sum(lambda[47:60]))
-n_RI[, 2, 48] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:47]), lambda[48] / sum(lambda[48:60]))
-n_RI[, 2, 49] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:48]), lambda[49] / sum(lambda[49:60]))
-n_RI[, 2, 50] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:49]), lambda[50] / sum(lambda[50:60]))
-n_RI[, 2, 51] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:50]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 2, 52] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 2, 53] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 2, 54] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 2, 55] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 2, 56] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 2, 57] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 2, 58] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 2, 59] <- Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:58]), lambda[59] / sum(lambda[59:60]))
+n_RI[, 2, 1] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2], lambda[1] / sum(lambda[1:60])) else 0
+n_RI[, 2, 2] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:1]), lambda[2] / sum(lambda[1:60])) else 0
+n_RI[, 2, 3] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:2]), lambda[3] / sum(lambda[1:60])) else 0
+n_RI[, 2, 4] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:3]), lambda[4] / sum(lambda[1:60])) else 0
+n_RI[, 2, 5] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:4]), lambda[5] / sum(lambda[1:60])) else 0
+n_RI[, 2, 6] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:5]), lambda[6] / sum(lambda[1:60])) else 0
+n_RI[, 2, 7] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:6]), lambda[7] / sum(lambda[1:60])) else 0
+n_RI[, 2, 8] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:7]), lambda[8] / sum(lambda[1:60])) else 0
+n_RI[, 2, 9] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:8]), lambda[9] / sum(lambda[1:60])) else 0
+n_RI[, 2, 10] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:9]), lambda[10] / sum(lambda[1:60])) else 0
+n_RI[, 2, 11] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:10]), lambda[11] / sum(lambda[1:60])) else 0
+n_RI[, 2, 12] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:11]), lambda[12] / sum(lambda[1:60])) else 0
+n_RI[, 2, 13] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:12]), lambda[13] / sum(lambda[1:60])) else 0
+n_RI[, 2, 14] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:13]), lambda[14] / sum(lambda[1:60])) else 0
+n_RI[, 2, 15] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:14]), lambda[15] / sum(lambda[1:60])) else 0
+n_RI[, 2, 16] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:15]), lambda[16] / sum(lambda[1:60])) else 0
+n_RI[, 2, 17] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:16]), lambda[17] / sum(lambda[1:60])) else 0
+n_RI[, 2, 18] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:17]), lambda[18] / sum(lambda[1:60])) else 0
+n_RI[, 2, 19] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:18]), lambda[19] / sum(lambda[1:60])) else 0
+n_RI[, 2, 20] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:19]), lambda[20] / sum(lambda[1:60])) else 0
+n_RI[, 2, 41] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:20]), lambda[41] / sum(lambda[1:60])) else 0
+n_RI[, 2, 42] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:41]), lambda[42] / sum(lambda[1:60])) else 0
+n_RI[, 2, 43] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:42]), lambda[43] / sum(lambda[1:60])) else 0
+n_RI[, 2, 44] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:43]), lambda[44] / sum(lambda[1:60])) else 0
+n_RI[, 2, 45] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:44]), lambda[45] / sum(lambda[1:60])) else 0
+n_RI[, 2, 46] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:45]), lambda[46] / sum(lambda[1:60])) else 0
+n_RI[, 2, 47] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:46]), lambda[47] / sum(lambda[1:60])) else 0
+n_RI[, 2, 48] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:47]), lambda[48] / sum(lambda[1:60])) else 0
+n_RI[, 2, 49] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:48]), lambda[49] / sum(lambda[1:60])) else 0
+n_RI[, 2, 50] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:49]), lambda[50] / sum(lambda[1:60])) else 0
+n_RI[, 2, 51] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:50]), lambda[51] / sum(lambda[1:60])) else 0
+n_RI[, 2, 52] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:51]), lambda[52] / sum(lambda[1:60])) else 0
+n_RI[, 2, 53] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:52]), lambda[53] / sum(lambda[1:60])) else 0
+n_RI[, 2, 54] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:53]), lambda[54] / sum(lambda[1:60])) else 0
+n_RI[, 2, 55] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:54]), lambda[55] / sum(lambda[1:60])) else 0
+n_RI[, 2, 56] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:55]), lambda[56] / sum(lambda[1:60])) else 0
+n_RI[, 2, 57] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:56]), lambda[57] / sum(lambda[1:60])) else 0
+n_RI[, 2, 58] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:57]), lambda[58] / sum(lambda[1:60])) else 0
+n_RI[, 2, 59] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 2] - sum(n_RI[i, 2, 1:58]), lambda[59] / sum(lambda[1:60])) else 0
 n_RI[, 2, 60] <- R_out[i, 2] - sum(n_RI[i, 2, 1:59])
-n_RI[, 3, 1] <- Binomial(R_out[i, 3], lambda[1] / sum(lambda[1:60]))
-n_RI[, 3, 2] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:1]), lambda[2] / sum(lambda[2:60]))
-n_RI[, 3, 3] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:2]), lambda[3] / sum(lambda[3:60]))
-n_RI[, 3, 4] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:3]), lambda[4] / sum(lambda[4:60]))
-n_RI[, 3, 5] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:4]), lambda[5] / sum(lambda[5:60]))
-n_RI[, 3, 6] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:5]), lambda[6] / sum(lambda[6:60]))
-n_RI[, 3, 7] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:6]), lambda[7] / sum(lambda[7:60]))
-n_RI[, 3, 8] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:7]), lambda[8] / sum(lambda[8:60]))
-n_RI[, 3, 9] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:8]), lambda[9] / sum(lambda[9:60]))
-n_RI[, 3, 10] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:9]), lambda[10] / sum(lambda[10:60]))
-n_RI[, 3, 11] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:10]), lambda[11] / sum(lambda[11:60]))
-n_RI[, 3, 12] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:11]), lambda[12] / sum(lambda[12:60]))
-n_RI[, 3, 13] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:12]), lambda[13] / sum(lambda[13:60]))
-n_RI[, 3, 14] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:13]), lambda[14] / sum(lambda[14:60]))
-n_RI[, 3, 15] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:14]), lambda[15] / sum(lambda[15:60]))
-n_RI[, 3, 16] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:15]), lambda[16] / sum(lambda[16:60]))
-n_RI[, 3, 17] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:16]), lambda[17] / sum(lambda[17:60]))
-n_RI[, 3, 18] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:17]), lambda[18] / sum(lambda[18:60]))
-n_RI[, 3, 19] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:18]), lambda[19] / sum(lambda[19:60]))
-n_RI[, 3, 20] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:19]), lambda[20] / sum(lambda[20:60]))
-n_RI[, 3, 21] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:20]), lambda[21] / sum(lambda[21:60]))
-n_RI[, 3, 22] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:21]), lambda[22] / sum(lambda[22:60]))
-n_RI[, 3, 23] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:22]), lambda[23] / sum(lambda[23:60]))
-n_RI[, 3, 24] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:23]), lambda[24] / sum(lambda[24:60]))
-n_RI[, 3, 25] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:24]), lambda[25] / sum(lambda[25:60]))
-n_RI[, 3, 26] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:25]), lambda[26] / sum(lambda[26:60]))
-n_RI[, 3, 27] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:26]), lambda[27] / sum(lambda[27:60]))
-n_RI[, 3, 28] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:27]), lambda[28] / sum(lambda[28:60]))
-n_RI[, 3, 29] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:28]), lambda[29] / sum(lambda[29:60]))
-n_RI[, 3, 30] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:29]), lambda[30] / sum(lambda[30:60]))
-n_RI[, 3, 31] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:30]), lambda[31] / sum(lambda[31:60]))
-n_RI[, 3, 32] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:31]), lambda[32] / sum(lambda[32:60]))
-n_RI[, 3, 33] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:32]), lambda[33] / sum(lambda[33:60]))
-n_RI[, 3, 34] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:33]), lambda[34] / sum(lambda[34:60]))
-n_RI[, 3, 35] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:34]), lambda[35] / sum(lambda[35:60]))
-n_RI[, 3, 36] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:35]), lambda[36] / sum(lambda[36:60]))
-n_RI[, 3, 37] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:36]), lambda[37] / sum(lambda[37:60]))
-n_RI[, 3, 38] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:37]), lambda[38] / sum(lambda[38:60]))
-n_RI[, 3, 39] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:38]), lambda[39] / sum(lambda[39:60]))
-n_RI[, 3, 40] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:39]), lambda[40] / sum(lambda[40:60]))
-n_RI[, 3, 51] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:40]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 3, 52] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 3, 53] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 3, 54] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 3, 55] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 3, 56] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 3, 57] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 3, 58] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 3, 59] <- Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:58]), lambda[59] / sum(lambda[59:60]))
+n_RI[, 3, 1] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3], lambda[1] / sum(lambda[1:60])) else 0
+n_RI[, 3, 2] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:1]), lambda[2] / sum(lambda[1:60])) else 0
+n_RI[, 3, 3] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:2]), lambda[3] / sum(lambda[1:60])) else 0
+n_RI[, 3, 4] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:3]), lambda[4] / sum(lambda[1:60])) else 0
+n_RI[, 3, 5] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:4]), lambda[5] / sum(lambda[1:60])) else 0
+n_RI[, 3, 6] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:5]), lambda[6] / sum(lambda[1:60])) else 0
+n_RI[, 3, 7] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:6]), lambda[7] / sum(lambda[1:60])) else 0
+n_RI[, 3, 8] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:7]), lambda[8] / sum(lambda[1:60])) else 0
+n_RI[, 3, 9] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:8]), lambda[9] / sum(lambda[1:60])) else 0
+n_RI[, 3, 10] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:9]), lambda[10] / sum(lambda[1:60])) else 0
+n_RI[, 3, 11] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:10]), lambda[11] / sum(lambda[1:60])) else 0
+n_RI[, 3, 12] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:11]), lambda[12] / sum(lambda[1:60])) else 0
+n_RI[, 3, 13] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:12]), lambda[13] / sum(lambda[1:60])) else 0
+n_RI[, 3, 14] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:13]), lambda[14] / sum(lambda[1:60])) else 0
+n_RI[, 3, 15] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:14]), lambda[15] / sum(lambda[1:60])) else 0
+n_RI[, 3, 16] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:15]), lambda[16] / sum(lambda[1:60])) else 0
+n_RI[, 3, 17] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:16]), lambda[17] / sum(lambda[1:60])) else 0
+n_RI[, 3, 18] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:17]), lambda[18] / sum(lambda[1:60])) else 0
+n_RI[, 3, 19] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:18]), lambda[19] / sum(lambda[1:60])) else 0
+n_RI[, 3, 20] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:19]), lambda[20] / sum(lambda[1:60])) else 0
+n_RI[, 3, 21] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:20]), lambda[21] / sum(lambda[1:60])) else 0
+n_RI[, 3, 22] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:21]), lambda[22] / sum(lambda[1:60])) else 0
+n_RI[, 3, 23] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:22]), lambda[23] / sum(lambda[1:60])) else 0
+n_RI[, 3, 24] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:23]), lambda[24] / sum(lambda[1:60])) else 0
+n_RI[, 3, 25] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:24]), lambda[25] / sum(lambda[1:60])) else 0
+n_RI[, 3, 26] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:25]), lambda[26] / sum(lambda[1:60])) else 0
+n_RI[, 3, 27] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:26]), lambda[27] / sum(lambda[1:60])) else 0
+n_RI[, 3, 28] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:27]), lambda[28] / sum(lambda[1:60])) else 0
+n_RI[, 3, 29] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:28]), lambda[29] / sum(lambda[1:60])) else 0
+n_RI[, 3, 30] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:29]), lambda[30] / sum(lambda[1:60])) else 0
+n_RI[, 3, 31] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:30]), lambda[31] / sum(lambda[1:60])) else 0
+n_RI[, 3, 32] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:31]), lambda[32] / sum(lambda[1:60])) else 0
+n_RI[, 3, 33] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:32]), lambda[33] / sum(lambda[1:60])) else 0
+n_RI[, 3, 34] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:33]), lambda[34] / sum(lambda[1:60])) else 0
+n_RI[, 3, 35] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:34]), lambda[35] / sum(lambda[1:60])) else 0
+n_RI[, 3, 36] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:35]), lambda[36] / sum(lambda[1:60])) else 0
+n_RI[, 3, 37] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:36]), lambda[37] / sum(lambda[1:60])) else 0
+n_RI[, 3, 38] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:37]), lambda[38] / sum(lambda[1:60])) else 0
+n_RI[, 3, 39] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:38]), lambda[39] / sum(lambda[1:60])) else 0
+n_RI[, 3, 40] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:39]), lambda[40] / sum(lambda[1:60])) else 0
+n_RI[, 3, 51] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:40]), lambda[51] / sum(lambda[1:60])) else 0
+n_RI[, 3, 52] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:51]), lambda[52] / sum(lambda[1:60])) else 0
+n_RI[, 3, 53] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:52]), lambda[53] / sum(lambda[1:60])) else 0
+n_RI[, 3, 54] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:53]), lambda[54] / sum(lambda[1:60])) else 0
+n_RI[, 3, 55] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:54]), lambda[55] / sum(lambda[1:60])) else 0
+n_RI[, 3, 56] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:55]), lambda[56] / sum(lambda[1:60])) else 0
+n_RI[, 3, 57] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:56]), lambda[57] / sum(lambda[1:60])) else 0
+n_RI[, 3, 58] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:57]), lambda[58] / sum(lambda[1:60])) else 0
+n_RI[, 3, 59] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 3] - sum(n_RI[i, 3, 1:58]), lambda[59] / sum(lambda[1:60])) else 0
 n_RI[, 3, 60] <- R_out[i, 3] - sum(n_RI[i, 3, 1:59])
-n_RI[, 4, 1] <- Binomial(R_out[i, 4], lambda[1] / sum(lambda[1:50]))
-n_RI[, 4, 2] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:1]), lambda[2] / sum(lambda[2:50]))
-n_RI[, 4, 3] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:2]), lambda[3] / sum(lambda[3:50]))
-n_RI[, 4, 4] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:3]), lambda[4] / sum(lambda[4:50]))
-n_RI[, 4, 5] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:4]), lambda[5] / sum(lambda[5:50]))
-n_RI[, 4, 6] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:5]), lambda[6] / sum(lambda[6:50]))
-n_RI[, 4, 7] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:6]), lambda[7] / sum(lambda[7:50]))
-n_RI[, 4, 8] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:7]), lambda[8] / sum(lambda[8:50]))
-n_RI[, 4, 9] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:8]), lambda[9] / sum(lambda[9:50]))
-n_RI[, 4, 10] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:9]), lambda[10] / sum(lambda[10:50]))
-n_RI[, 4, 11] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:10]), lambda[11] / sum(lambda[11:50]))
-n_RI[, 4, 12] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:11]), lambda[12] / sum(lambda[12:50]))
-n_RI[, 4, 13] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:12]), lambda[13] / sum(lambda[13:50]))
-n_RI[, 4, 14] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:13]), lambda[14] / sum(lambda[14:50]))
-n_RI[, 4, 15] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:14]), lambda[15] / sum(lambda[15:50]))
-n_RI[, 4, 16] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:15]), lambda[16] / sum(lambda[16:50]))
-n_RI[, 4, 17] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:16]), lambda[17] / sum(lambda[17:50]))
-n_RI[, 4, 18] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:17]), lambda[18] / sum(lambda[18:50]))
-n_RI[, 4, 19] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:18]), lambda[19] / sum(lambda[19:50]))
-n_RI[, 4, 20] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:19]), lambda[20] / sum(lambda[20:50]))
-n_RI[, 4, 21] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:20]), lambda[21] / sum(lambda[21:50]))
-n_RI[, 4, 22] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:21]), lambda[22] / sum(lambda[22:50]))
-n_RI[, 4, 23] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:22]), lambda[23] / sum(lambda[23:50]))
-n_RI[, 4, 24] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:23]), lambda[24] / sum(lambda[24:50]))
-n_RI[, 4, 25] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:24]), lambda[25] / sum(lambda[25:50]))
-n_RI[, 4, 26] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:25]), lambda[26] / sum(lambda[26:50]))
-n_RI[, 4, 27] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:26]), lambda[27] / sum(lambda[27:50]))
-n_RI[, 4, 28] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:27]), lambda[28] / sum(lambda[28:50]))
-n_RI[, 4, 29] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:28]), lambda[29] / sum(lambda[29:50]))
-n_RI[, 4, 30] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:29]), lambda[30] / sum(lambda[30:50]))
-n_RI[, 4, 31] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:30]), lambda[31] / sum(lambda[31:50]))
-n_RI[, 4, 32] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:31]), lambda[32] / sum(lambda[32:50]))
-n_RI[, 4, 33] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:32]), lambda[33] / sum(lambda[33:50]))
-n_RI[, 4, 34] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:33]), lambda[34] / sum(lambda[34:50]))
-n_RI[, 4, 35] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:34]), lambda[35] / sum(lambda[35:50]))
-n_RI[, 4, 36] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:35]), lambda[36] / sum(lambda[36:50]))
-n_RI[, 4, 37] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:36]), lambda[37] / sum(lambda[37:50]))
-n_RI[, 4, 38] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:37]), lambda[38] / sum(lambda[38:50]))
-n_RI[, 4, 39] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:38]), lambda[39] / sum(lambda[39:50]))
-n_RI[, 4, 40] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:39]), lambda[40] / sum(lambda[40:50]))
-n_RI[, 4, 41] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:40]), lambda[41] / sum(lambda[41:50]))
-n_RI[, 4, 42] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:41]), lambda[42] / sum(lambda[42:50]))
-n_RI[, 4, 43] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:42]), lambda[43] / sum(lambda[43:50]))
-n_RI[, 4, 44] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:43]), lambda[44] / sum(lambda[44:50]))
-n_RI[, 4, 45] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:44]), lambda[45] / sum(lambda[45:50]))
-n_RI[, 4, 46] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:45]), lambda[46] / sum(lambda[46:50]))
-n_RI[, 4, 47] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:46]), lambda[47] / sum(lambda[47:50]))
-n_RI[, 4, 48] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:47]), lambda[48] / sum(lambda[48:50]))
-n_RI[, 4, 49] <- Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:48]), lambda[49] / sum(lambda[49:50]))
+n_RI[, 4, 1] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4], lambda[1] / sum(lambda[1:50])) else 0
+n_RI[, 4, 2] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:1]), lambda[2] / sum(lambda[1:50])) else 0
+n_RI[, 4, 3] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:2]), lambda[3] / sum(lambda[1:50])) else 0
+n_RI[, 4, 4] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:3]), lambda[4] / sum(lambda[1:50])) else 0
+n_RI[, 4, 5] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:4]), lambda[5] / sum(lambda[1:50])) else 0
+n_RI[, 4, 6] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:5]), lambda[6] / sum(lambda[1:50])) else 0
+n_RI[, 4, 7] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:6]), lambda[7] / sum(lambda[1:50])) else 0
+n_RI[, 4, 8] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:7]), lambda[8] / sum(lambda[1:50])) else 0
+n_RI[, 4, 9] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:8]), lambda[9] / sum(lambda[1:50])) else 0
+n_RI[, 4, 10] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:9]), lambda[10] / sum(lambda[1:50])) else 0
+n_RI[, 4, 11] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:10]), lambda[11] / sum(lambda[1:50])) else 0
+n_RI[, 4, 12] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:11]), lambda[12] / sum(lambda[1:50])) else 0
+n_RI[, 4, 13] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:12]), lambda[13] / sum(lambda[1:50])) else 0
+n_RI[, 4, 14] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:13]), lambda[14] / sum(lambda[1:50])) else 0
+n_RI[, 4, 15] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:14]), lambda[15] / sum(lambda[1:50])) else 0
+n_RI[, 4, 16] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:15]), lambda[16] / sum(lambda[1:50])) else 0
+n_RI[, 4, 17] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:16]), lambda[17] / sum(lambda[1:50])) else 0
+n_RI[, 4, 18] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:17]), lambda[18] / sum(lambda[1:50])) else 0
+n_RI[, 4, 19] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:18]), lambda[19] / sum(lambda[1:50])) else 0
+n_RI[, 4, 20] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:19]), lambda[20] / sum(lambda[1:50])) else 0
+n_RI[, 4, 21] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:20]), lambda[21] / sum(lambda[1:50])) else 0
+n_RI[, 4, 22] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:21]), lambda[22] / sum(lambda[1:50])) else 0
+n_RI[, 4, 23] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:22]), lambda[23] / sum(lambda[1:50])) else 0
+n_RI[, 4, 24] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:23]), lambda[24] / sum(lambda[1:50])) else 0
+n_RI[, 4, 25] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:24]), lambda[25] / sum(lambda[1:50])) else 0
+n_RI[, 4, 26] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:25]), lambda[26] / sum(lambda[1:50])) else 0
+n_RI[, 4, 27] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:26]), lambda[27] / sum(lambda[1:50])) else 0
+n_RI[, 4, 28] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:27]), lambda[28] / sum(lambda[1:50])) else 0
+n_RI[, 4, 29] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:28]), lambda[29] / sum(lambda[1:50])) else 0
+n_RI[, 4, 30] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:29]), lambda[30] / sum(lambda[1:50])) else 0
+n_RI[, 4, 31] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:30]), lambda[31] / sum(lambda[1:50])) else 0
+n_RI[, 4, 32] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:31]), lambda[32] / sum(lambda[1:50])) else 0
+n_RI[, 4, 33] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:32]), lambda[33] / sum(lambda[1:50])) else 0
+n_RI[, 4, 34] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:33]), lambda[34] / sum(lambda[1:50])) else 0
+n_RI[, 4, 35] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:34]), lambda[35] / sum(lambda[1:50])) else 0
+n_RI[, 4, 36] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:35]), lambda[36] / sum(lambda[1:50])) else 0
+n_RI[, 4, 37] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:36]), lambda[37] / sum(lambda[1:50])) else 0
+n_RI[, 4, 38] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:37]), lambda[38] / sum(lambda[1:50])) else 0
+n_RI[, 4, 39] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:38]), lambda[39] / sum(lambda[1:50])) else 0
+n_RI[, 4, 40] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:39]), lambda[40] / sum(lambda[1:50])) else 0
+n_RI[, 4, 41] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:40]), lambda[41] / sum(lambda[1:50])) else 0
+n_RI[, 4, 42] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:41]), lambda[42] / sum(lambda[1:50])) else 0
+n_RI[, 4, 43] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:42]), lambda[43] / sum(lambda[1:50])) else 0
+n_RI[, 4, 44] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:43]), lambda[44] / sum(lambda[1:50])) else 0
+n_RI[, 4, 45] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:44]), lambda[45] / sum(lambda[1:50])) else 0
+n_RI[, 4, 46] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:45]), lambda[46] / sum(lambda[1:50])) else 0
+n_RI[, 4, 47] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:46]), lambda[47] / sum(lambda[1:50])) else 0
+n_RI[, 4, 48] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:47]), lambda[48] / sum(lambda[1:50])) else 0
+n_RI[, 4, 49] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 4] - sum(n_RI[i, 4, 1:48]), lambda[49] / sum(lambda[1:50])) else 0
 n_RI[, 4, 50] <- R_out[i, 4] - sum(n_RI[i, 4, 1:49])
-# After 2 infections
-n_RI[, 5, 41] <- Binomial(R_out[i, 5], lambda[41] / sum(lambda[41:60]))
-n_RI[, 5, 42] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:41]), lambda[42] / sum(lambda[42:60]))
-n_RI[, 5, 43] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:42]), lambda[43] / sum(lambda[43:60]))
-n_RI[, 5, 44] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:43]), lambda[44] / sum(lambda[44:60]))
-n_RI[, 5, 45] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:44]), lambda[45] / sum(lambda[45:60]))
-n_RI[, 5, 46] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:45]), lambda[46] / sum(lambda[46:60]))
-n_RI[, 5, 47] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:46]), lambda[47] / sum(lambda[47:60]))
-n_RI[, 5, 48] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:47]), lambda[48] / sum(lambda[48:60]))
-n_RI[, 5, 49] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:48]), lambda[49] / sum(lambda[49:60]))
-n_RI[, 5, 50] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:49]), lambda[50] / sum(lambda[50:60]))
-n_RI[, 5, 51] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:50]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 5, 52] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 5, 53] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 5, 54] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 5, 55] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 5, 56] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 5, 57] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 5, 58] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 5, 59] <- Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:58]), lambda[59] / sum(lambda[59:60]))
+n_RI[, 5, 41] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5], lambda[41] / sum(lambda[41:60])) else 0
+n_RI[, 5, 42] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:41]), lambda[42] / sum(lambda[41:60])) else 0
+n_RI[, 5, 43] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:42]), lambda[43] / sum(lambda[41:60])) else 0
+n_RI[, 5, 44] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:43]), lambda[44] / sum(lambda[41:60])) else 0
+n_RI[, 5, 45] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:44]), lambda[45] / sum(lambda[41:60])) else 0
+n_RI[, 5, 46] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:45]), lambda[46] / sum(lambda[41:60])) else 0
+n_RI[, 5, 47] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:46]), lambda[47] / sum(lambda[41:60])) else 0
+n_RI[, 5, 48] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:47]), lambda[48] / sum(lambda[41:60])) else 0
+n_RI[, 5, 49] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:48]), lambda[49] / sum(lambda[41:60])) else 0
+n_RI[, 5, 50] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:49]), lambda[50] / sum(lambda[41:60])) else 0
+n_RI[, 5, 51] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:50]), lambda[51] / sum(lambda[41:60])) else 0
+n_RI[, 5, 52] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:51]), lambda[52] / sum(lambda[41:60])) else 0
+n_RI[, 5, 53] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:52]), lambda[53] / sum(lambda[41:60])) else 0
+n_RI[, 5, 54] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:53]), lambda[54] / sum(lambda[41:60])) else 0
+n_RI[, 5, 55] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:54]), lambda[55] / sum(lambda[41:60])) else 0
+n_RI[, 5, 56] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:55]), lambda[56] / sum(lambda[41:60])) else 0
+n_RI[, 5, 57] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:56]), lambda[57] / sum(lambda[41:60])) else 0
+n_RI[, 5, 58] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:57]), lambda[58] / sum(lambda[41:60])) else 0
+n_RI[, 5, 59] <- if (sum(lambda[41:60]) > 0) Binomial(R_out[i, 5] - sum(n_RI[i, 5, 41:58]), lambda[59] / sum(lambda[41:60])) else 0
 n_RI[, 5, 60] <- R_out[i, 5] - sum(n_RI[i, 5, 41:59])
-n_RI[, 6, 21] <- Binomial(R_out[i, 6], lambda[21] / sum(lambda[21:60]))
-n_RI[, 6, 22] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:21]), lambda[22] / sum(lambda[22:60]))
-n_RI[, 6, 23] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:22]), lambda[23] / sum(lambda[23:60]))
-n_RI[, 6, 24] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:23]), lambda[24] / sum(lambda[24:60]))
-n_RI[, 6, 25] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:24]), lambda[25] / sum(lambda[25:60]))
-n_RI[, 6, 26] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:25]), lambda[26] / sum(lambda[26:60]))
-n_RI[, 6, 27] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:26]), lambda[27] / sum(lambda[27:60]))
-n_RI[, 6, 28] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:27]), lambda[28] / sum(lambda[28:60]))
-n_RI[, 6, 29] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:28]), lambda[29] / sum(lambda[29:60]))
-n_RI[, 6, 30] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:29]), lambda[30] / sum(lambda[30:60]))
-n_RI[, 6, 31] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:30]), lambda[31] / sum(lambda[31:60]))
-n_RI[, 6, 32] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:31]), lambda[32] / sum(lambda[32:60]))
-n_RI[, 6, 33] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:32]), lambda[33] / sum(lambda[33:60]))
-n_RI[, 6, 34] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:33]), lambda[34] / sum(lambda[34:60]))
-n_RI[, 6, 35] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:34]), lambda[35] / sum(lambda[35:60]))
-n_RI[, 6, 36] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:35]), lambda[36] / sum(lambda[36:60]))
-n_RI[, 6, 37] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:36]), lambda[37] / sum(lambda[37:60]))
-n_RI[, 6, 38] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:37]), lambda[38] / sum(lambda[38:60]))
-n_RI[, 6, 39] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:38]), lambda[39] / sum(lambda[39:60]))
-n_RI[, 6, 40] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:39]), lambda[40] / sum(lambda[40:60]))
-n_RI[, 6, 51] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:40]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 6, 52] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 6, 53] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 6, 54] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 6, 55] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 6, 56] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 6, 57] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 6, 58] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 6, 59] <- Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:58]), lambda[59] / sum(lambda[59:60]))
-n_RI[, 6, 60] <- R_out[i, 6] - sum(n_RI[i, 6, 21:59])
-n_RI[, 7, 21] <- Binomial(R_out[i, 7], lambda[21] / sum(lambda[21:50]))
-n_RI[, 7, 22] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:21]), lambda[22] / sum(lambda[22:50]))
-n_RI[, 7, 23] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:22]), lambda[23] / sum(lambda[23:50]))
-n_RI[, 7, 24] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:23]), lambda[24] / sum(lambda[24:50]))
-n_RI[, 7, 25] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:24]), lambda[25] / sum(lambda[25:50]))
-n_RI[, 7, 26] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:25]), lambda[26] / sum(lambda[26:50]))
-n_RI[, 7, 27] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:26]), lambda[27] / sum(lambda[27:50]))
-n_RI[, 7, 28] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:27]), lambda[28] / sum(lambda[28:50]))
-n_RI[, 7, 29] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:28]), lambda[29] / sum(lambda[29:50]))
-n_RI[, 7, 30] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:29]), lambda[30] / sum(lambda[30:50]))
-n_RI[, 7, 31] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:30]), lambda[31] / sum(lambda[31:50]))
-n_RI[, 7, 32] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:31]), lambda[32] / sum(lambda[32:50]))
-n_RI[, 7, 33] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:32]), lambda[33] / sum(lambda[33:50]))
-n_RI[, 7, 34] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:33]), lambda[34] / sum(lambda[34:50]))
-n_RI[, 7, 35] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:34]), lambda[35] / sum(lambda[35:50]))
-n_RI[, 7, 36] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:35]), lambda[36] / sum(lambda[36:50]))
-n_RI[, 7, 37] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:36]), lambda[37] / sum(lambda[37:50]))
-n_RI[, 7, 38] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:37]), lambda[38] / sum(lambda[38:50]))
-n_RI[, 7, 39] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:38]), lambda[39] / sum(lambda[39:50]))
-n_RI[, 7, 40] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:39]), lambda[40] / sum(lambda[40:50]))
-n_RI[, 7, 41] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:40]), lambda[41] / sum(lambda[41:50]))
-n_RI[, 7, 42] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:41]), lambda[42] / sum(lambda[42:50]))
-n_RI[, 7, 43] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:42]), lambda[43] / sum(lambda[43:50]))
-n_RI[, 7, 44] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:43]), lambda[44] / sum(lambda[44:50]))
-n_RI[, 7, 45] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:44]), lambda[45] / sum(lambda[45:50]))
-n_RI[, 7, 46] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:45]), lambda[46] / sum(lambda[46:50]))
-n_RI[, 7, 47] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:46]), lambda[47] / sum(lambda[47:50]))
-n_RI[, 7, 48] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:47]), lambda[48] / sum(lambda[48:50]))
-n_RI[, 7, 49] <- Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:48]), lambda[49] / sum(lambda[49:50]))
-n_RI[, 7, 50] <- R_out[i, 7] - sum(n_RI[i, 7, 21:49])
+
 # After 3 infections
-n_RI[, 8, 1] <- Binomial(R_out[i, 8], lambda[1] / sum(lambda[1:60]))
-n_RI[, 8, 2] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:1]), lambda[2] / sum(lambda[2:60]))
-n_RI[, 8, 3] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:2]), lambda[3] / sum(lambda[3:60]))
-n_RI[, 8, 4] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:3]), lambda[4] / sum(lambda[4:60]))
-n_RI[, 8, 5] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:4]), lambda[5] / sum(lambda[5:60]))
-n_RI[, 8, 6] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:5]), lambda[6] / sum(lambda[6:60]))
-n_RI[, 8, 7] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:6]), lambda[7] / sum(lambda[7:60]))
-n_RI[, 8, 8] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:7]), lambda[8] / sum(lambda[8:60]))
-n_RI[, 8, 9] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:8]), lambda[9] / sum(lambda[9:60]))
-n_RI[, 8, 10] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:9]), lambda[10] / sum(lambda[10:60]))
-n_RI[, 8, 11] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:10]), lambda[11] / sum(lambda[11:60]))
-n_RI[, 8, 12] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:11]), lambda[12] / sum(lambda[12:60]))
-n_RI[, 8, 13] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:12]), lambda[13] / sum(lambda[13:60]))
-n_RI[, 8, 14] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:13]), lambda[14] / sum(lambda[14:60]))
-n_RI[, 8, 15] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:14]), lambda[15] / sum(lambda[15:60]))
-n_RI[, 8, 16] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:15]), lambda[16] / sum(lambda[16:60]))
-n_RI[, 8, 17] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:16]), lambda[17] / sum(lambda[17:60]))
-n_RI[, 8, 18] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:17]), lambda[18] / sum(lambda[18:60]))
-n_RI[, 8, 19] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:18]), lambda[19] / sum(lambda[19:60]))
-n_RI[, 8, 20] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:19]), lambda[20] / sum(lambda[20:60]))
-n_RI[, 8, 51] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:20]), lambda[51] / sum(lambda[51:60]))
-n_RI[, 8, 52] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 8, 53] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 8, 54] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 8, 55] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 8, 56] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 8, 57] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 8, 58] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 8, 59] <- Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:58]), lambda[59] / sum(lambda[59:60]))
+n_RI[, 6, 21] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6], lambda[21] / sum(lambda[21:60])) else 0
+n_RI[, 6, 22] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:21]), lambda[22] / sum(lambda[21:60])) else 0
+n_RI[, 6, 23] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:22]), lambda[23] / sum(lambda[21:60])) else 0
+n_RI[, 6, 24] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:23]), lambda[24] / sum(lambda[21:60])) else 0
+n_RI[, 6, 25] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:24]), lambda[25] / sum(lambda[21:60])) else 0
+n_RI[, 6, 26] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:25]), lambda[26] / sum(lambda[21:60])) else 0
+n_RI[, 6, 27] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:26]), lambda[27] / sum(lambda[21:60])) else 0
+n_RI[, 6, 28] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:27]), lambda[28] / sum(lambda[21:60])) else 0
+n_RI[, 6, 29] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:28]), lambda[29] / sum(lambda[21:60])) else 0
+n_RI[, 6, 30] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:29]), lambda[30] / sum(lambda[21:60])) else 0
+n_RI[, 6, 31] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:30]), lambda[31] / sum(lambda[21:60])) else 0
+n_RI[, 6, 32] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:31]), lambda[32] / sum(lambda[21:60])) else 0
+n_RI[, 6, 33] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:32]), lambda[33] / sum(lambda[21:60])) else 0
+n_RI[, 6, 34] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:33]), lambda[34] / sum(lambda[21:60])) else 0
+n_RI[, 6, 35] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:34]), lambda[35] / sum(lambda[21:60])) else 0
+n_RI[, 6, 36] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:35]), lambda[36] / sum(lambda[21:60])) else 0
+n_RI[, 6, 37] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:36]), lambda[37] / sum(lambda[21:60])) else 0
+n_RI[, 6, 38] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:37]), lambda[38] / sum(lambda[21:60])) else 0
+n_RI[, 6, 39] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:38]), lambda[39] / sum(lambda[21:60])) else 0
+n_RI[, 6, 40] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:39]), lambda[40] / sum(lambda[21:60])) else 0
+n_RI[, 6, 51] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:40]), lambda[51] / sum(lambda[21:60])) else 0
+n_RI[, 6, 52] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:51]), lambda[52] / sum(lambda[21:60])) else 0
+n_RI[, 6, 53] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:52]), lambda[53] / sum(lambda[21:60])) else 0
+n_RI[, 6, 54] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:53]), lambda[54] / sum(lambda[21:60])) else 0
+n_RI[, 6, 55] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:54]), lambda[55] / sum(lambda[21:60])) else 0
+n_RI[, 6, 56] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:55]), lambda[56] / sum(lambda[21:60])) else 0
+n_RI[, 6, 57] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:56]), lambda[57] / sum(lambda[21:60])) else 0
+n_RI[, 6, 58] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:57]), lambda[58] / sum(lambda[21:60])) else 0
+n_RI[, 6, 59] <- if (sum(lambda[21:60]) > 0) Binomial(R_out[i, 6] - sum(n_RI[i, 6, 21:58]), lambda[59] / sum(lambda[21:60])) else 0
+n_RI[, 6, 60] <- R_out[i, 6] - sum(n_RI[i, 6, 21:59])
+# After 3 infections
+n_RI[, 7, 21] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7], lambda[21] / sum(lambda[21:50])) else 0
+n_RI[, 7, 22] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:21]), lambda[22] / sum(lambda[21:50])) else 0
+n_RI[, 7, 23] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:22]), lambda[23] / sum(lambda[21:50])) else 0
+n_RI[, 7, 24] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:23]), lambda[24] / sum(lambda[21:50])) else 0
+n_RI[, 7, 25] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:24]), lambda[25] / sum(lambda[21:50])) else 0
+n_RI[, 7, 26] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:25]), lambda[26] / sum(lambda[21:50])) else 0
+n_RI[, 7, 27] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:26]), lambda[27] / sum(lambda[21:50])) else 0
+n_RI[, 7, 28] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:27]), lambda[28] / sum(lambda[21:50])) else 0
+n_RI[, 7, 29] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:28]), lambda[29] / sum(lambda[21:50])) else 0
+n_RI[, 7, 30] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:29]), lambda[30] / sum(lambda[21:50])) else 0
+n_RI[, 7, 31] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:30]), lambda[31] / sum(lambda[21:50])) else 0
+n_RI[, 7, 32] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:31]), lambda[32] / sum(lambda[21:50])) else 0
+n_RI[, 7, 33] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:32]), lambda[33] / sum(lambda[21:50])) else 0
+n_RI[, 7, 34] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:33]), lambda[34] / sum(lambda[21:50])) else 0
+n_RI[, 7, 35] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:34]), lambda[35] / sum(lambda[21:50])) else 0
+n_RI[, 7, 36] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:35]), lambda[36] / sum(lambda[21:50])) else 0
+n_RI[, 7, 37] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:36]), lambda[37] / sum(lambda[21:50])) else 0
+n_RI[, 7, 38] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:37]), lambda[38] / sum(lambda[21:50])) else 0
+n_RI[, 7, 39] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:38]), lambda[39] / sum(lambda[21:50])) else 0
+n_RI[, 7, 40] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:39]), lambda[40] / sum(lambda[21:50])) else 0
+n_RI[, 7, 41] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:40]), lambda[41] / sum(lambda[21:50])) else 0
+n_RI[, 7, 42] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:41]), lambda[42] / sum(lambda[21:50])) else 0
+n_RI[, 7, 43] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:42]), lambda[43] / sum(lambda[21:50])) else 0
+n_RI[, 7, 44] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:43]), lambda[44] / sum(lambda[21:50])) else 0
+n_RI[, 7, 45] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:44]), lambda[45] / sum(lambda[21:50])) else 0
+n_RI[, 7, 46] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:45]), lambda[46] / sum(lambda[21:50])) else 0
+n_RI[, 7, 47] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:46]), lambda[47] / sum(lambda[21:50])) else 0
+n_RI[, 7, 48] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:47]), lambda[48] / sum(lambda[21:50])) else 0
+n_RI[, 7, 49] <- if (sum(lambda[21:50]) > 0) Binomial(R_out[i, 7] - sum(n_RI[i, 7, 21:48]), lambda[49] / sum(lambda[21:50])) else 0
+n_RI[, 7, 50] <- R_out[i, 7] - sum(n_RI[i, 7, 21:49])
+n_RI[, 8, 1] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8], lambda[1] / sum(lambda[1:60])) else 0
+n_RI[, 8, 2] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:1]), lambda[2] / sum(lambda[1:60])) else 0
+n_RI[, 8, 3] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:2]), lambda[3] / sum(lambda[1:60])) else 0
+n_RI[, 8, 4] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:3]), lambda[4] / sum(lambda[1:60])) else 0
+n_RI[, 8, 5] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:4]), lambda[5] / sum(lambda[1:60])) else 0
+n_RI[, 8, 6] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:5]), lambda[6] / sum(lambda[1:60])) else 0
+n_RI[, 8, 7] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:6]), lambda[7] / sum(lambda[1:60])) else 0
+n_RI[, 8, 8] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:7]), lambda[8] / sum(lambda[1:60])) else 0
+n_RI[, 8, 9] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:8]), lambda[9] / sum(lambda[1:60])) else 0
+n_RI[, 8, 10] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:9]), lambda[10] / sum(lambda[1:60])) else 0
+n_RI[, 8, 11] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:10]), lambda[11] / sum(lambda[1:60])) else 0
+n_RI[, 8, 12] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:11]), lambda[12] / sum(lambda[1:60])) else 0
+n_RI[, 8, 13] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:12]), lambda[13] / sum(lambda[1:60])) else 0
+n_RI[, 8, 14] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:13]), lambda[14] / sum(lambda[1:60])) else 0
+n_RI[, 8, 15] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:14]), lambda[15] / sum(lambda[1:60])) else 0
+n_RI[, 8, 16] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:15]), lambda[16] / sum(lambda[1:60])) else 0
+n_RI[, 8, 17] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:16]), lambda[17] / sum(lambda[1:60])) else 0
+n_RI[, 8, 18] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:17]), lambda[18] / sum(lambda[1:60])) else 0
+n_RI[, 8, 19] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:18]), lambda[19] / sum(lambda[1:60])) else 0
+n_RI[, 8, 20] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:19]), lambda[20] / sum(lambda[1:60])) else 0
+n_RI[, 8, 51] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:20]), lambda[51] / sum(lambda[1:60])) else 0
+n_RI[, 8, 52] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:51]), lambda[52] / sum(lambda[1:60])) else 0
+n_RI[, 8, 53] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:52]), lambda[53] / sum(lambda[1:60])) else 0
+n_RI[, 8, 54] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:53]), lambda[54] / sum(lambda[1:60])) else 0
+n_RI[, 8, 55] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:54]), lambda[55] / sum(lambda[1:60])) else 0
+n_RI[, 8, 56] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:55]), lambda[56] / sum(lambda[1:60])) else 0
+n_RI[, 8, 57] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:56]), lambda[57] / sum(lambda[1:60])) else 0
+n_RI[, 8, 58] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:57]), lambda[58] / sum(lambda[1:60])) else 0
+n_RI[, 8, 59] <- if (sum(lambda[1:60]) > 0) Binomial(R_out[i, 8] - sum(n_RI[i, 8, 1:58]), lambda[59] / sum(lambda[1:60])) else 0
 n_RI[, 8, 60] <- R_out[i, 8] - sum(n_RI[i, 8, 1:59])
-n_RI[, 9, 1] <- Binomial(R_out[i, 9], lambda[1] / sum(lambda[1:50]))
-n_RI[, 9, 2] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:1]), lambda[2] / sum(lambda[2:50]))
-n_RI[, 9, 3] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:2]), lambda[3] / sum(lambda[3:50]))
-n_RI[, 9, 4] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:3]), lambda[4] / sum(lambda[4:50]))
-n_RI[, 9, 5] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:4]), lambda[5] / sum(lambda[5:50]))
-n_RI[, 9, 6] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:5]), lambda[6] / sum(lambda[6:50]))
-n_RI[, 9, 7] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:6]), lambda[7] / sum(lambda[7:50]))
-n_RI[, 9, 8] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:7]), lambda[8] / sum(lambda[8:50]))
-n_RI[, 9, 9] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:8]), lambda[9] / sum(lambda[9:50]))
-n_RI[, 9, 10] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:9]), lambda[10] / sum(lambda[10:50]))
-n_RI[, 9, 11] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:10]), lambda[11] / sum(lambda[11:50]))
-n_RI[, 9, 12] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:11]), lambda[12] / sum(lambda[12:50]))
-n_RI[, 9, 13] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:12]), lambda[13] / sum(lambda[13:50]))
-n_RI[, 9, 14] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:13]), lambda[14] / sum(lambda[14:50]))
-n_RI[, 9, 15] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:14]), lambda[15] / sum(lambda[15:50]))
-n_RI[, 9, 16] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:15]), lambda[16] / sum(lambda[16:50]))
-n_RI[, 9, 17] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:16]), lambda[17] / sum(lambda[17:50]))
-n_RI[, 9, 18] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:17]), lambda[18] / sum(lambda[18:50]))
-n_RI[, 9, 19] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:18]), lambda[19] / sum(lambda[19:50]))
-n_RI[, 9, 20] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:19]), lambda[20] / sum(lambda[20:50]))
-n_RI[, 9, 41] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:20]), lambda[41] / sum(lambda[41:50]))
-n_RI[, 9, 42] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:41]), lambda[42] / sum(lambda[42:50]))
-n_RI[, 9, 43] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:42]), lambda[43] / sum(lambda[43:50]))
-n_RI[, 9, 44] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:43]), lambda[44] / sum(lambda[44:50]))
-n_RI[, 9, 45] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:44]), lambda[45] / sum(lambda[45:50]))
-n_RI[, 9, 46] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:45]), lambda[46] / sum(lambda[46:50]))
-n_RI[, 9, 47] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:46]), lambda[47] / sum(lambda[47:50]))
-n_RI[, 9, 48] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:47]), lambda[48] / sum(lambda[48:50]))
-n_RI[, 9, 49] <- Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:48]), lambda[49] / sum(lambda[49:50]))
+n_RI[, 9, 1] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9], lambda[1] / sum(lambda[1:50])) else 0
+n_RI[, 9, 2] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:1]), lambda[2] / sum(lambda[1:50])) else 0
+n_RI[, 9, 3] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:2]), lambda[3] / sum(lambda[1:50])) else 0
+n_RI[, 9, 4] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:3]), lambda[4] / sum(lambda[1:50])) else 0
+n_RI[, 9, 5] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:4]), lambda[5] / sum(lambda[1:50])) else 0
+n_RI[, 9, 6] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:5]), lambda[6] / sum(lambda[1:50])) else 0
+n_RI[, 9, 7] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:6]), lambda[7] / sum(lambda[1:50])) else 0
+n_RI[, 9, 8] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:7]), lambda[8] / sum(lambda[1:50])) else 0
+n_RI[, 9, 9] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:8]), lambda[9] / sum(lambda[1:50])) else 0
+n_RI[, 9, 10] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:9]), lambda[10] / sum(lambda[1:50])) else 0
+n_RI[, 9, 11] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:10]), lambda[11] / sum(lambda[1:50])) else 0
+n_RI[, 9, 12] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:11]), lambda[12] / sum(lambda[1:50])) else 0
+n_RI[, 9, 13] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:12]), lambda[13] / sum(lambda[1:50])) else 0
+n_RI[, 9, 14] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:13]), lambda[14] / sum(lambda[1:50])) else 0
+n_RI[, 9, 15] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:14]), lambda[15] / sum(lambda[1:50])) else 0
+n_RI[, 9, 16] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:15]), lambda[16] / sum(lambda[1:50])) else 0
+n_RI[, 9, 17] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:16]), lambda[17] / sum(lambda[1:50])) else 0
+n_RI[, 9, 18] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:17]), lambda[18] / sum(lambda[1:50])) else 0
+n_RI[, 9, 19] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:18]), lambda[19] / sum(lambda[1:50])) else 0
+n_RI[, 9, 20] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:19]), lambda[20] / sum(lambda[1:50])) else 0
+n_RI[, 9, 41] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:20]), lambda[41] / sum(lambda[1:50])) else 0
+n_RI[, 9, 42] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:41]), lambda[42] / sum(lambda[1:50])) else 0
+n_RI[, 9, 43] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:42]), lambda[43] / sum(lambda[1:50])) else 0
+n_RI[, 9, 44] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:43]), lambda[44] / sum(lambda[1:50])) else 0
+n_RI[, 9, 45] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:44]), lambda[45] / sum(lambda[1:50])) else 0
+n_RI[, 9, 46] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:45]), lambda[46] / sum(lambda[1:50])) else 0
+n_RI[, 9, 47] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:46]), lambda[47] / sum(lambda[1:50])) else 0
+n_RI[, 9, 48] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:47]), lambda[48] / sum(lambda[1:50])) else 0
+n_RI[, 9, 49] <- if (sum(lambda[1:50]) > 0) Binomial(R_out[i, 9] - sum(n_RI[i, 9, 1:48]), lambda[49] / sum(lambda[1:50])) else 0
 n_RI[, 9, 50] <- R_out[i, 9] - sum(n_RI[i, 9, 1:49])
-n_RI[, 10, 1] <- Binomial(R_out[i, 10], lambda[1] / sum(lambda[1:40]))
-n_RI[, 10, 2] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:1]), lambda[2] / sum(lambda[2:40]))
-n_RI[, 10, 3] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:2]), lambda[3] / sum(lambda[3:40]))
-n_RI[, 10, 4] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:3]), lambda[4] / sum(lambda[4:40]))
-n_RI[, 10, 5] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:4]), lambda[5] / sum(lambda[5:40]))
-n_RI[, 10, 6] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:5]), lambda[6] / sum(lambda[6:40]))
-n_RI[, 10, 7] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:6]), lambda[7] / sum(lambda[7:40]))
-n_RI[, 10, 8] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:7]), lambda[8] / sum(lambda[8:40]))
-n_RI[, 10, 9] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:8]), lambda[9] / sum(lambda[9:40]))
-n_RI[, 10, 10] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:9]), lambda[10] / sum(lambda[10:40]))
-n_RI[, 10, 11] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:10]), lambda[11] / sum(lambda[11:40]))
-n_RI[, 10, 12] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:11]), lambda[12] / sum(lambda[12:40]))
-n_RI[, 10, 13] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:12]), lambda[13] / sum(lambda[13:40]))
-n_RI[, 10, 14] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:13]), lambda[14] / sum(lambda[14:40]))
-n_RI[, 10, 15] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:14]), lambda[15] / sum(lambda[15:40]))
-n_RI[, 10, 16] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:15]), lambda[16] / sum(lambda[16:40]))
-n_RI[, 10, 17] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:16]), lambda[17] / sum(lambda[17:40]))
-n_RI[, 10, 18] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:17]), lambda[18] / sum(lambda[18:40]))
-n_RI[, 10, 19] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:18]), lambda[19] / sum(lambda[19:40]))
-n_RI[, 10, 20] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:19]), lambda[20] / sum(lambda[20:40]))
-n_RI[, 10, 21] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:20]), lambda[21] / sum(lambda[21:40]))
-n_RI[, 10, 22] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:21]), lambda[22] / sum(lambda[22:40]))
-n_RI[, 10, 23] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:22]), lambda[23] / sum(lambda[23:40]))
-n_RI[, 10, 24] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:23]), lambda[24] / sum(lambda[24:40]))
-n_RI[, 10, 25] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:24]), lambda[25] / sum(lambda[25:40]))
-n_RI[, 10, 26] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:25]), lambda[26] / sum(lambda[26:40]))
-n_RI[, 10, 27] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:26]), lambda[27] / sum(lambda[27:40]))
-n_RI[, 10, 28] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:27]), lambda[28] / sum(lambda[28:40]))
-n_RI[, 10, 29] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:28]), lambda[29] / sum(lambda[29:40]))
-n_RI[, 10, 30] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:29]), lambda[30] / sum(lambda[30:40]))
-n_RI[, 10, 31] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:30]), lambda[31] / sum(lambda[31:40]))
-n_RI[, 10, 32] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:31]), lambda[32] / sum(lambda[32:40]))
-n_RI[, 10, 33] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:32]), lambda[33] / sum(lambda[33:40]))
-n_RI[, 10, 34] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:33]), lambda[34] / sum(lambda[34:40]))
-n_RI[, 10, 35] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:34]), lambda[35] / sum(lambda[35:40]))
-n_RI[, 10, 36] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:35]), lambda[36] / sum(lambda[36:40]))
-n_RI[, 10, 37] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:36]), lambda[37] / sum(lambda[37:40]))
-n_RI[, 10, 38] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:37]), lambda[38] / sum(lambda[38:40]))
-n_RI[, 10, 39] <- Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:38]), lambda[39] / sum(lambda[39:40]))
+n_RI[, 10, 1] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10], lambda[1] / sum(lambda[1:40])) else 0
+n_RI[, 10, 2] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:1]), lambda[2] / sum(lambda[1:40])) else 0
+n_RI[, 10, 3] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:2]), lambda[3] / sum(lambda[1:40])) else 0
+n_RI[, 10, 4] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:3]), lambda[4] / sum(lambda[1:40])) else 0
+n_RI[, 10, 5] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:4]), lambda[5] / sum(lambda[1:40])) else 0
+n_RI[, 10, 6] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:5]), lambda[6] / sum(lambda[1:40])) else 0
+n_RI[, 10, 7] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:6]), lambda[7] / sum(lambda[1:40])) else 0
+n_RI[, 10, 8] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:7]), lambda[8] / sum(lambda[1:40])) else 0
+n_RI[, 10, 9] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:8]), lambda[9] / sum(lambda[1:40])) else 0
+n_RI[, 10, 10] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:9]), lambda[10] / sum(lambda[1:40])) else 0
+n_RI[, 10, 11] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:10]), lambda[11] / sum(lambda[1:40])) else 0
+n_RI[, 10, 12] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:11]), lambda[12] / sum(lambda[1:40])) else 0
+n_RI[, 10, 13] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:12]), lambda[13] / sum(lambda[1:40])) else 0
+n_RI[, 10, 14] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:13]), lambda[14] / sum(lambda[1:40])) else 0
+n_RI[, 10, 15] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:14]), lambda[15] / sum(lambda[1:40])) else 0
+n_RI[, 10, 16] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:15]), lambda[16] / sum(lambda[1:40])) else 0
+n_RI[, 10, 17] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:16]), lambda[17] / sum(lambda[1:40])) else 0
+n_RI[, 10, 18] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:17]), lambda[18] / sum(lambda[1:40])) else 0
+n_RI[, 10, 19] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:18]), lambda[19] / sum(lambda[1:40])) else 0
+n_RI[, 10, 20] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:19]), lambda[20] / sum(lambda[1:40])) else 0
+n_RI[, 10, 21] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:20]), lambda[21] / sum(lambda[1:40])) else 0
+n_RI[, 10, 22] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:21]), lambda[22] / sum(lambda[1:40])) else 0
+n_RI[, 10, 23] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:22]), lambda[23] / sum(lambda[1:40])) else 0
+n_RI[, 10, 24] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:23]), lambda[24] / sum(lambda[1:40])) else 0
+n_RI[, 10, 25] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:24]), lambda[25] / sum(lambda[1:40])) else 0
+n_RI[, 10, 26] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:25]), lambda[26] / sum(lambda[1:40])) else 0
+n_RI[, 10, 27] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:26]), lambda[27] / sum(lambda[1:40])) else 0
+n_RI[, 10, 28] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:27]), lambda[28] / sum(lambda[1:40])) else 0
+n_RI[, 10, 29] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:28]), lambda[29] / sum(lambda[1:40])) else 0
+n_RI[, 10, 30] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:29]), lambda[30] / sum(lambda[1:40])) else 0
+n_RI[, 10, 31] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:30]), lambda[31] / sum(lambda[1:40])) else 0
+n_RI[, 10, 32] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:31]), lambda[32] / sum(lambda[1:40])) else 0
+n_RI[, 10, 33] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:32]), lambda[33] / sum(lambda[1:40])) else 0
+n_RI[, 10, 34] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:33]), lambda[34] / sum(lambda[1:40])) else 0
+n_RI[, 10, 35] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:34]), lambda[35] / sum(lambda[1:40])) else 0
+n_RI[, 10, 36] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:35]), lambda[36] / sum(lambda[1:40])) else 0
+n_RI[, 10, 37] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:36]), lambda[37] / sum(lambda[1:40])) else 0
+n_RI[, 10, 38] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:37]), lambda[38] / sum(lambda[1:40])) else 0
+n_RI[, 10, 39] <- if (sum(lambda[1:40]) > 0) Binomial(R_out[i, 10] - sum(n_RI[i, 10, 1:38]), lambda[39] / sum(lambda[1:40])) else 0
 n_RI[, 10, 40] <- R_out[i, 10] - sum(n_RI[i, 10, 1:39])
-n_RI[, 11, 51] <- Binomial(R_out[i, 11], lambda[51] / sum(lambda[51:60]))
-n_RI[, 11, 52] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:51]), lambda[52] / sum(lambda[52:60]))
-n_RI[, 11, 53] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:52]), lambda[53] / sum(lambda[53:60]))
-n_RI[, 11, 54] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:53]), lambda[54] / sum(lambda[54:60]))
-n_RI[, 11, 55] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:54]), lambda[55] / sum(lambda[55:60]))
-n_RI[, 11, 56] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:55]), lambda[56] / sum(lambda[56:60]))
-n_RI[, 11, 57] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:56]), lambda[57] / sum(lambda[57:60]))
-n_RI[, 11, 58] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:57]), lambda[58] / sum(lambda[58:60]))
-n_RI[, 11, 59] <- Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:58]), lambda[59] / sum(lambda[59:60]))
+n_RI[, 11, 51] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11], lambda[51] / sum(lambda[51:60])) else 0
+n_RI[, 11, 52] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:51]), lambda[52] / sum(lambda[51:60])) else 0
+n_RI[, 11, 53] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:52]), lambda[53] / sum(lambda[51:60])) else 0
+n_RI[, 11, 54] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:53]), lambda[54] / sum(lambda[51:60])) else 0
+n_RI[, 11, 55] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:54]), lambda[55] / sum(lambda[51:60])) else 0
+n_RI[, 11, 56] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:55]), lambda[56] / sum(lambda[51:60])) else 0
+n_RI[, 11, 57] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:56]), lambda[57] / sum(lambda[51:60])) else 0
+n_RI[, 11, 58] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:57]), lambda[58] / sum(lambda[51:60])) else 0
+n_RI[, 11, 59] <- if (sum(lambda[51:60]) > 0) Binomial(R_out[i, 11] - sum(n_RI[i, 11, 51:58]), lambda[59] / sum(lambda[51:60])) else 0
 n_RI[, 11, 60] <- R_out[i, 11] - sum(n_RI[i, 11, 51:59])
-n_RI[, 12, 41] <- Binomial(R_out[i, 12], lambda[41] / sum(lambda[41:50]))
-n_RI[, 12, 42] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:41]), lambda[42] / sum(lambda[42:50]))
-n_RI[, 12, 43] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:42]), lambda[43] / sum(lambda[43:50]))
-n_RI[, 12, 44] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:43]), lambda[44] / sum(lambda[44:50]))
-n_RI[, 12, 45] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:44]), lambda[45] / sum(lambda[45:50]))
-n_RI[, 12, 46] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:45]), lambda[46] / sum(lambda[46:50]))
-n_RI[, 12, 47] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:46]), lambda[47] / sum(lambda[47:50]))
-n_RI[, 12, 48] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:47]), lambda[48] / sum(lambda[48:50]))
-n_RI[, 12, 49] <- Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:48]), lambda[49] / sum(lambda[49:50]))
+n_RI[, 12, 41] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12], lambda[41] / sum(lambda[41:50])) else 0
+n_RI[, 12, 42] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:41]), lambda[42] / sum(lambda[41:50])) else 0
+n_RI[, 12, 43] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:42]), lambda[43] / sum(lambda[41:50])) else 0
+n_RI[, 12, 44] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:43]), lambda[44] / sum(lambda[41:50])) else 0
+n_RI[, 12, 45] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:44]), lambda[45] / sum(lambda[41:50])) else 0
+n_RI[, 12, 46] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:45]), lambda[46] / sum(lambda[41:50])) else 0
+n_RI[, 12, 47] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:46]), lambda[47] / sum(lambda[41:50])) else 0
+n_RI[, 12, 48] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:47]), lambda[48] / sum(lambda[41:50])) else 0
+n_RI[, 12, 49] <- if (sum(lambda[41:50]) > 0) Binomial(R_out[i, 12] - sum(n_RI[i, 12, 41:48]), lambda[49] / sum(lambda[41:50])) else 0
 n_RI[, 12, 50] <- R_out[i, 12] - sum(n_RI[i, 12, 41:49])
-n_RI[, 13, 21] <- Binomial(R_out[i, 13], lambda[21] / sum(lambda[21:40]))
-n_RI[, 13, 22] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:21]), lambda[22] / sum(lambda[22:40]))
-n_RI[, 13, 23] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:22]), lambda[23] / sum(lambda[23:40]))
-n_RI[, 13, 24] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:23]), lambda[24] / sum(lambda[24:40]))
-n_RI[, 13, 25] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:24]), lambda[25] / sum(lambda[25:40]))
-n_RI[, 13, 26] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:25]), lambda[26] / sum(lambda[26:40]))
-n_RI[, 13, 27] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:26]), lambda[27] / sum(lambda[27:40]))
-n_RI[, 13, 28] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:27]), lambda[28] / sum(lambda[28:40]))
-n_RI[, 13, 29] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:28]), lambda[29] / sum(lambda[29:40]))
-n_RI[, 13, 30] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:29]), lambda[30] / sum(lambda[30:40]))
-n_RI[, 13, 31] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:30]), lambda[31] / sum(lambda[31:40]))
-n_RI[, 13, 32] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:31]), lambda[32] / sum(lambda[32:40]))
-n_RI[, 13, 33] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:32]), lambda[33] / sum(lambda[33:40]))
-n_RI[, 13, 34] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:33]), lambda[34] / sum(lambda[34:40]))
-n_RI[, 13, 35] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:34]), lambda[35] / sum(lambda[35:40]))
-n_RI[, 13, 36] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:35]), lambda[36] / sum(lambda[36:40]))
-n_RI[, 13, 37] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:36]), lambda[37] / sum(lambda[37:40]))
-n_RI[, 13, 38] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:37]), lambda[38] / sum(lambda[38:40]))
-n_RI[, 13, 39] <- Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:38]), lambda[39] / sum(lambda[39:40]))
+n_RI[, 13, 21] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13], lambda[21] / sum(lambda[21:40])) else 0
+n_RI[, 13, 22] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:21]), lambda[22] / sum(lambda[21:40])) else 0
+n_RI[, 13, 23] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:22]), lambda[23] / sum(lambda[21:40])) else 0
+n_RI[, 13, 24] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:23]), lambda[24] / sum(lambda[21:40])) else 0
+n_RI[, 13, 25] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:24]), lambda[25] / sum(lambda[21:40])) else 0
+n_RI[, 13, 26] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:25]), lambda[26] / sum(lambda[21:40])) else 0
+n_RI[, 13, 27] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:26]), lambda[27] / sum(lambda[21:40])) else 0
+n_RI[, 13, 28] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:27]), lambda[28] / sum(lambda[21:40])) else 0
+n_RI[, 13, 29] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:28]), lambda[29] / sum(lambda[21:40])) else 0
+n_RI[, 13, 30] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:29]), lambda[30] / sum(lambda[21:40])) else 0
+n_RI[, 13, 31] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:30]), lambda[31] / sum(lambda[21:40])) else 0
+n_RI[, 13, 32] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:31]), lambda[32] / sum(lambda[21:40])) else 0
+n_RI[, 13, 33] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:32]), lambda[33] / sum(lambda[21:40])) else 0
+n_RI[, 13, 34] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:33]), lambda[34] / sum(lambda[21:40])) else 0
+n_RI[, 13, 35] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:34]), lambda[35] / sum(lambda[21:40])) else 0
+n_RI[, 13, 36] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:35]), lambda[36] / sum(lambda[21:40])) else 0
+n_RI[, 13, 37] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:36]), lambda[37] / sum(lambda[21:40])) else 0
+n_RI[, 13, 38] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:37]), lambda[38] / sum(lambda[21:40])) else 0
+n_RI[, 13, 39] <- if (sum(lambda[21:40]) > 0) Binomial(R_out[i, 13] - sum(n_RI[i, 13, 21:38]), lambda[39] / sum(lambda[21:40])) else 0
 n_RI[, 13, 40] <- R_out[i, 13] - sum(n_RI[i, 13, 21:39])
-n_RI[, 14, 1] <- Binomial(R_out[i, 14], lambda[1] / sum(lambda[1:20]))
-n_RI[, 14, 2] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:1]), lambda[2] / sum(lambda[2:20]))
-n_RI[, 14, 3] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:2]), lambda[3] / sum(lambda[3:20]))
-n_RI[, 14, 4] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:3]), lambda[4] / sum(lambda[4:20]))
-n_RI[, 14, 5] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:4]), lambda[5] / sum(lambda[5:20]))
-n_RI[, 14, 6] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:5]), lambda[6] / sum(lambda[6:20]))
-n_RI[, 14, 7] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:6]), lambda[7] / sum(lambda[7:20]))
-n_RI[, 14, 8] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:7]), lambda[8] / sum(lambda[8:20]))
-n_RI[, 14, 9] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:8]), lambda[9] / sum(lambda[9:20]))
-n_RI[, 14, 10] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:9]), lambda[10] / sum(lambda[10:20]))
-n_RI[, 14, 11] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:10]), lambda[11] / sum(lambda[11:20]))
-n_RI[, 14, 12] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:11]), lambda[12] / sum(lambda[12:20]))
-n_RI[, 14, 13] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:12]), lambda[13] / sum(lambda[13:20]))
-n_RI[, 14, 14] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:13]), lambda[14] / sum(lambda[14:20]))
-n_RI[, 14, 15] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:14]), lambda[15] / sum(lambda[15:20]))
-n_RI[, 14, 16] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:15]), lambda[16] / sum(lambda[16:20]))
-n_RI[, 14, 17] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:16]), lambda[17] / sum(lambda[17:20]))
-n_RI[, 14, 18] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:17]), lambda[18] / sum(lambda[18:20]))
-n_RI[, 14, 19] <- Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:18]), lambda[19] / sum(lambda[19:20]))
+n_RI[, 14, 1] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14], lambda[1] / sum(lambda[1:20])) else 0
+n_RI[, 14, 2] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:1]), lambda[2] / sum(lambda[1:20])) else 0
+n_RI[, 14, 3] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:2]), lambda[3] / sum(lambda[1:20])) else 0
+n_RI[, 14, 4] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:3]), lambda[4] / sum(lambda[1:20])) else 0
+n_RI[, 14, 5] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:4]), lambda[5] / sum(lambda[1:20])) else 0
+n_RI[, 14, 6] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:5]), lambda[6] / sum(lambda[1:20])) else 0
+n_RI[, 14, 7] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:6]), lambda[7] / sum(lambda[1:20])) else 0
+n_RI[, 14, 8] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:7]), lambda[8] / sum(lambda[1:20])) else 0
+n_RI[, 14, 9] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:8]), lambda[9] / sum(lambda[1:20])) else 0
+n_RI[, 14, 10] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:9]), lambda[10] / sum(lambda[1:20])) else 0
+n_RI[, 14, 11] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:10]), lambda[11] / sum(lambda[1:20])) else 0
+n_RI[, 14, 12] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:11]), lambda[12] / sum(lambda[1:20])) else 0
+n_RI[, 14, 13] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:12]), lambda[13] / sum(lambda[1:20])) else 0
+n_RI[, 14, 14] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:13]), lambda[14] / sum(lambda[1:20])) else 0
+n_RI[, 14, 15] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:14]), lambda[15] / sum(lambda[1:20])) else 0
+n_RI[, 14, 16] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:15]), lambda[16] / sum(lambda[1:20])) else 0
+n_RI[, 14, 17] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:16]), lambda[17] / sum(lambda[1:20])) else 0
+n_RI[, 14, 18] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:17]), lambda[18] / sum(lambda[1:20])) else 0
+n_RI[, 14, 19] <- if (sum(lambda[1:20]) > 0) Binomial(R_out[i, 14] - sum(n_RI[i, 14, 1:18]), lambda[19] / sum(lambda[1:20])) else 0
 n_RI[, 14, 20] <- R_out[i, 14] - sum(n_RI[i, 14, 1:19])
