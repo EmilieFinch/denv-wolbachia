@@ -6,14 +6,17 @@ n_strains <- 60
 
 for (j in 1:n_strains) {
   if (j == 1) {
-    cat(sprintf("n_SI[, %d] <- Binomial(S_out[i], lambda[%d] / sum(lambda[%d:%d]))\n",
-                j, j, j, n_strains))
+    cat(sprintf(
+      "n_SI[, %d] <- if (sum(lambda[%d:%d]) > 0) Binomial(S_out[i], lambda[%d] / sum(lambda[%d:%d])) else 0\n",
+      j, j, n_strains, j, j, n_strains))
   } else if (j < n_strains) {
-    cat(sprintf("n_SI[, %d] <- Binomial(S_out[i] - sum(n_SI[i, 1:%d]), lambda[%d] / sum(lambda[%d:%d]))\n",
-                j, j - 1, j, j, n_strains))
+    cat(sprintf(
+      "n_SI[, %d] <- if (sum(lambda[%d:%d]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:%d]), lambda[%d] / sum(lambda[%d:%d])) else 0\n",
+      j, j, n_strains, j - 1, j, j, n_strains))
   } else {
-    cat(sprintf("n_SI[, %d] <- S_out[i] - sum(n_SI[i, 1:%d])\n",
-                j, j - 1))
+    cat(sprintf(
+      "n_SI[, %d] <- S_out[i] - sum(n_SI[i, 1:%d])\n",
+      j, j - 1))
   }
 }
 
@@ -60,7 +63,8 @@ for (j in seq_along(immune_histories)) {
 cat(paste(code_lines, collapse = "\n"))
 
 ## n_RI Generate chain binomial ## 
-# Mapping from serotypes to strains
+
+# Map serotypes to strain indices
 serotype_strains <- list(
   `1` = 1:20,
   `2` = 21:40,
@@ -68,49 +72,30 @@ serotype_strains <- list(
   `4` = 51:60
 )
 
-# Define the 15 immune histories as character vectors of serotypes
-immune_histories <- list(
-  `1` = c(1),
-  `2` = c(2),
-  `3` = c(3),
-  `4` = c(4),
-  `12` = c(1, 2),
-  `13` = c(1, 3),
-  `14` = c(1, 4),
-  `23` = c(2, 3),
-  `24` = c(2, 4),
-  `34` = c(3, 4),
-  `123` = c(1, 2, 3),
-  `124` = c(1, 2, 4),
-  `134` = c(1, 3, 4),
-  `234` = c(2, 3, 4),
-  `1234` = c(1, 2, 3, 4)
-)
+# Add one more level to immune histories (15 total)
+immune_histories[[15]] <- c(1, 2, 3, 4)  # 1234
 
-# Assign history IDs from 1 to 15
-history_ids <- seq_along(immune_histories)
-
-for (h_idx in history_ids) {
+for (h_idx in seq_along(immune_histories)) {
   immune <- immune_histories[[h_idx]]
   remaining_serotypes <- setdiff(1:4, immune)
-  if (length(remaining_serotypes) == 0) next  # Fully immune, skip
+  if (length(remaining_serotypes) == 0) next  # Fully immune
   
   eligible_strains <- unlist(serotype_strains[as.character(remaining_serotypes)])
   k <- length(eligible_strains)
   
   for (j_idx in seq_along(eligible_strains)) {
     j <- eligible_strains[j_idx]
+    lambda_range <- sprintf("lambda[%d:%d]", eligible_strains[1], eligible_strains[k])
     
     if (j_idx == 1) {
       cat(sprintf(
-        "n_RI[, %d, %d] <- Binomial(R_out[i, %d], lambda[%d] / sum(lambda[%d:%d]))\n",
-        h_idx, j, h_idx, j, eligible_strains[1], eligible_strains[k]
+        "n_RI[, %d, %d] <- if (sum(%s) > 0) Binomial(R_out[i, %d], lambda[%d] / sum(%s)) else 0\n",
+        h_idx, j, lambda_range, h_idx, j, lambda_range
       ))
     } else if (j_idx < k) {
       cat(sprintf(
-        "n_RI[, %d, %d] <- Binomial(R_out[i, %d] - sum(n_RI[i, %d, %d:%d]), lambda[%d] / sum(lambda[%d:%d]))\n",
-        h_idx, j, h_idx, h_idx, eligible_strains[1], eligible_strains[j_idx - 1],
-        j, eligible_strains[j_idx], eligible_strains[k]
+        "n_RI[, %d, %d] <- if (sum(%s) > 0) Binomial(R_out[i, %d] - sum(n_RI[i, %d, %d:%d]), lambda[%d] / sum(%s)) else 0\n",
+        h_idx, j, lambda_range, h_idx, h_idx, eligible_strains[1], eligible_strains[j_idx - 1], j, lambda_range
       ))
     } else {
       cat(sprintf(
@@ -164,7 +149,7 @@ for (i in seq_along(I_histories)) {
     
     c_index <- C_map[[new_key]]
     strain_slice <- sero_ranges[[as.character(sero)]]
-    expr <- sprintf("sum(I[i, %d, %s])", i, strain_slice)
+    expr <- sprintf("sum(I_out[i, %d, %s])", i, strain_slice)
     
     C_contributions[[c_index]] <- c(C_contributions[[c_index]], expr)
   }
