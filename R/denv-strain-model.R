@@ -20,10 +20,11 @@
 # Note that we don't keep track of the order of past infections
 
 
-#### User-input model parameters
+#### User-input model parameters ####
 ## Time-keeping
 initial(sim_year) <- 1
-update(sim_year) <- floor((time)/365 + 1) # track year of simulation, assuming all years are 365 days long. Note this updates in next time step so sim_year == 2 happens when time = 366.
+update(sim_year) <- floor((time+1)/365) + 1 # track year of simulation, assuming all years are 365 days long. Note as first time is 0, sim_year == 2 happens when time = 365
+scenario_years <- parameter() # number of years to simulate
 
 ## Demog & serotype parameters
 n_age <- parameter(80)
@@ -32,20 +33,39 @@ n_strains <- 60 #total number of strains modelled
 r0 <- parameter() # input strain-specific R0 (e.g. each strain has this R0 when introduced alone)
 gamma <- parameter(0.2)
 N_init <- parameter() # initial population size by age
+demog <- parameter() # array of population size [age_group, sim_year]
+ageing_day <- (time %% 365 == 0 && time != 0) # population ages once a year
+initial(day_of_year, zero_every = 365) <- 0
+update(day_of_year) <- day_of_year + 1
+
 ## Wolbachia parameters
 wol_on <- parameter()
 wol_start <- parameter()
 wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
-## Track population size by age group
-
 #### Core equations ####
-update(S[]) <- S[i] - S_out[i]
-update(I[,1,]) <- I[i,j,k] - I_out[i,j,k] + n_SI[i,k]
-update(I[,2:n_histories,]) <- I[i,j,k] - I_out[i,j,k] + n_RI[i,j-1,k]
-update(C[,]) <- C[i,j] - n_CR[i,j] + n_IC[i,j] 
-update(R[,]) <- R[i,j] - R_out[i,j] + n_CR[i,j] 
-update(N[]) <- S[i] + sum(I[i,,]) + sum(C[i,]) + sum(R[i,])
+update(S[]) <- if(i == 1 && ageing_day) births[day_of_year + 1] else 
+  if(i == 1) births[day_of_year] + S[i] - S_out[i] else
+  if(ageing_day && i > 1) S[i-1] - S_out[i-1] else
+  S[i] - S_out[i]
+
+update(I[,1,]) <- if(ageing_day && i == 1) 0 else
+  if(ageing_day && i > 1)  I[i-1,j,k] - I_out[i-1,j,k] + n_SI[i-1,k] else 
+    I[i,j,k] - I_out[i,j,k] + n_SI[i,k]
+
+update(I[,2:n_histories,]) <- if(ageing_day && i == 1) 0 else
+  if(ageing_day && i > 1) I[i-1,j,k] - I_out[i-1,j,k] + n_RI[i-1,j-1,k] else
+    I[i,j,k] - I_out[i,j,k] + n_RI[i,j-1,k]
+
+update(C[,]) <- if(ageing_day && i == 1) 0 else
+ if(ageing_day && i > 1) C[i-1,j] - n_CR[i-1,j] + n_IC[i-1,j] else
+    C[i,j] - n_CR[i,j] + n_IC[i,j]
+
+update(R[,]) <- if(ageing_day && i == 1) 0 else
+  if(ageing_day && i > 1) R[i-1,j] - R_out[i-1,j] + n_CR[i-1,j] else
+    R[i,j] - R_out[i,j] + n_CR[i,j]
+
+update(N[]) <- if(ageing_day) demog[i, sim_year + 1] else N[i] # don't use sum of S, I, C and R to avoid introducing lag in N
 
 #### Calculate individual probabilities of transition ####
 beta[] <- r0*gamma
@@ -64,11 +84,11 @@ p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
 nu <- 1/365  # duration of cross protection of a year 
 
-print("N: {N[11]},  I: {I[11,1,1]}, S: {S[11]}, C:{C[11,1]}, R:{R[11,1]}")
+print("ageing_day: {ageing_day}, day_of_year: {day_of_year}, births: {births[1]}, sim_year: {sim_year}, N:{N[1]}, S[1]:{S[1]}")
 
 #### Draw number moving between compartments ####
-
-S_out[] <- Binomial(S[i], 1 - exp(-lambda_total*dt)) # chain binomial for n_SI below
+## Note chain binomials for n_SI and n_RI at the end of the script 
+S_out[] <- Binomial(S[i], 1 - exp(-lambda_total*dt)) 
 I_out[,,] <- Binomial(I[i,j,k], p_IC)
 
 n_IC[, 1] <- sum(I_out[i, 1, 1:20]) # seronaive infected with DENV1
@@ -103,7 +123,18 @@ R_out[, 12] <- Binomial(R[i, 12], 1 - exp(- (lambda_3)*dt))
 R_out[, 13] <- Binomial(R[i, 13], 1 - exp(- (lambda_2)*dt))
 R_out[, 14] <- Binomial(R[i, 14], 1 - exp(- (lambda_1)*dt)) # chain binomial for n_RI below
 
-#### Outputs
+#### Ageing & demography #### 
+
+births_per_day <- demog[1,sim_year] / 365 ## spread births out throughout the year
+remainder <- demog[1,sim_year] %% 365
+births[] <- if(sim_year != 1 && i <= remainder) births_per_day + 1 else if(sim_year!= 1 && i > remainder) births_per_day else 0
+
+## each year adjust each compartment to match demography data
+#current_N[] <- S[i] + sum(I[i,,]) + sum(C[i,]) + sum(R[i,])
+#shift[2:n_age] <- if(ageing_day && current_N[i-1] > 0) demog[i, sim_year+1]/current_N[i-1] else 1.0 # adjust population sizes so they match demographic data from upcoming year
+##shift[1] <- 1 # for youngest age group all enter as susceptible
+
+#### Track burden outputs ####
 ## Infections by strain
 
 update(inf[]) <- sum(I[,,i])
@@ -119,10 +150,10 @@ update(prior_infection[5]) <- sum(R[,15])
 #### Initial states & dimensions ####
 initial(N[]) <- N_init[i]
 initial(S[]) <- if(i == 11) N_init[i] - 60 else N_init[i]
-initial(I[11,1,1:20]) <- 1000
-initial(I[11,2,21:40]) <- 1000
-initial(I[11,3,41:50]) <- 1000
-initial(I[11,4,51:60]) <- 1000
+initial(I[11,1,1:20]) <- 1
+initial(I[11,2,21:40]) <- 1
+initial(I[11,3,41:50]) <- 1
+initial(I[11,4,51:60]) <- 1
 
 initial(C[,]) <- 0
 initial(R[,]) <- 0
@@ -150,6 +181,10 @@ dim(N) <- n_age
 dim(inf) <- n_strains
 dim(inf_age) <- n_age
 dim(prior_infection) <- c(5)
+dim(demog) <- c(n_age, scenario_years)
+dim(births) <- c(365)
+#dim(shift) <- c(n_age)
+#dim(current_N) <- c(n_age)
 
 ## Chain binomial for strain specific infections ## 
 ## From susceptible

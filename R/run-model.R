@@ -1,21 +1,28 @@
 # Script to run denv simulations
 
+source(here("R", "utils.R"))
 # Prepare model inputs
+
+brazil_demog <- load_demography()
+
+demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2043)
 
 ## Load generative model
 denv_mod <- odin2::odin(here("R/denv-strain-model.R"), debug = TRUE, skip_cache = TRUE) 
 
 denv_sys <- dust_system_create(denv_mod, 
-                          pars = list(n_age = 80,
+                          pars = list(n_age = 81,
                                       r0 = 2,
                                       gamma = 0.2,
-                                      N_init = rep(2000000,80),
+                                      demog = demog,
+                                      scenario_years = ncol(demog),
+                                      N_init = demog[,1],
                                       I_init = I_init,
                                       wol_on = 0,
                                       wol_start = 0,
                                       wol_inhib = rep(0,60)))
 dust_system_set_state_initial(denv_sys) # use initial conditions defined in code
-t <- seq(1, 365*2, by = 1)
+t <- seq(1, 735, by = 1)
 denv_out <- dust_system_simulate(denv_sys, t)
 denv_out <- dust_unpack_state(denv_sys, denv_out)
 
