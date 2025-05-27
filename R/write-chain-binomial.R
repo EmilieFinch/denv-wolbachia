@@ -2,7 +2,7 @@
 
 ## For S -> I
 
-n_strains <- 60
+n_strains <- 80
 
 for (j in 1:n_strains) {
   if (j == 1) {
@@ -68,8 +68,8 @@ cat(paste(code_lines, collapse = "\n"))
 serotype_strains <- list(
   `1` = 1:20,
   `2` = 21:40,
-  `3` = 41:50,
-  `4` = 51:60
+  `3` = 41:60,
+  `4` = 61:80
 )
 
 # Add one more level to immune histories (15 total)
@@ -132,8 +132,8 @@ C_map <- setNames(seq_along(C_histories), sapply(C_histories, key))
 sero_ranges <- list(
   `1` = "1:20",
   `2` = "21:40",
-  `3` = "41:50",
-  `4` = "51:60"
+  `3` = "41:60",
+  `4` = "61:80"
 )
 
 C_contributions <- vector("list", length(C_histories))
