@@ -85,7 +85,7 @@ for (h_idx in seq_along(immune_histories)) {
   
   for (j_idx in seq_along(eligible_strains)) {
     j <- eligible_strains[j_idx]
-    lambda_range <- sprintf("lambda[%d:%d]", eligible_strains[1], eligible_strains[k])
+    lambda_range <- sprintf("lambda[%d:%d]", eligible_strains[j_idx], eligible_strains[k])
     
     if (j_idx == 1) {
       cat(sprintf(
@@ -105,6 +105,98 @@ for (h_idx in seq_along(immune_histories)) {
     }
   }
 }
+
+
+## New version
+# Helper: Break a vector into contiguous chunks
+contiguous_chunks <- function(x) {
+  split(x, cumsum(c(1, diff(x) != 1)))
+}
+
+# Generate ODIN-safe sum expression for possibly non-contiguous lambda indices
+sum_lambda_expr <- function(indices) {
+  chunks <- contiguous_chunks(indices)
+  chunk_sums <- vapply(chunks, function(chunk) {
+    if (length(chunk) == 1) {
+      sprintf("lambda[%d]", chunk[1])
+    } else {
+      sprintf("sum(lambda[%d:%d])", min(chunk), max(chunk))
+    }
+  }, character(1))
+  paste(chunk_sums, collapse = " + ")
+}
+
+# Generate ODIN-safe sum expression for possibly non-contiguous n_RI indices
+sum_n_RI_expr <- function(h_idx, indices) {
+  if (length(indices) == 0) return("0")
+  chunks <- contiguous_chunks(indices)
+  chunk_sums <- vapply(chunks, function(chunk) {
+    if (length(chunk) == 1) {
+      sprintf("n_RI[i, %d, %d]", h_idx, chunk[1])
+    } else {
+      sprintf("sum(n_RI[i, %d, %d:%d])", h_idx, min(chunk), max(chunk))
+    }
+  }, character(1))
+  paste(chunk_sums, collapse = " + ")
+}
+
+# Your serotype to strain index mapping
+serotype_strains <- list(
+  `1` = 1:20,
+  `2` = 21:40,
+  `3` = 41:60,
+  `4` = 61:80
+)
+
+# Your immune histories (including fully immune)
+immune_histories <- list(
+  c(1), c(2), c(3), c(4),
+  c(1,2), c(1,3), c(1,4), c(2,3),
+  c(2,4), c(3,4), c(1,2,3), c(1,2,4),
+  c(1,3,4), c(2,3,4), c(1,2,3,4)
+)
+
+for (h_idx in seq_along(immune_histories)) {
+  immune <- immune_histories[[h_idx]]
+  remaining_serotypes <- setdiff(1:4, immune)
+  if (length(remaining_serotypes) == 0) next  # Fully immune
+  
+  eligible_strains <- unlist(serotype_strains[as.character(remaining_serotypes)])
+  k <- length(eligible_strains)
+  
+  for (j_idx in seq_along(eligible_strains)) {
+    j <- eligible_strains[j_idx]
+    
+    # Lambda denominator: from current j to the end of eligible strains
+    lambda_indices <- eligible_strains[j_idx:k]
+    lambda_range_expr <- sum_lambda_expr(lambda_indices)
+    
+    # Sum of previous n_RI terms: strains before current j
+    prev_strains_vec <- eligible_strains[1:(j_idx - 1)]
+    prev_strains_expr <- sum_n_RI_expr(h_idx, prev_strains_vec)
+    
+    if (j_idx == 1) {
+      # First strain: no subtraction of previous n_RI
+      cat(sprintf(
+        "n_RI[, %d, %d] <- if ((%s) > 0) Binomial(R_out[i, %d], lambda[%d] / (%s)) else 0\n",
+        h_idx, j, lambda_range_expr, h_idx, j, lambda_range_expr
+      ))
+    } else if (j_idx < k) {
+      # Intermediate strains
+      cat(sprintf(
+        "n_RI[, %d, %d] <- if ((%s) > 0) Binomial(R_out[i, %d] - (%s), lambda[%d] / (%s)) else 0\n",
+        h_idx, j, lambda_range_expr, h_idx, prev_strains_expr, j, lambda_range_expr
+      ))
+    } else {
+      # Last strain: assign remainder
+      cat(sprintf(
+        "n_RI[, %d, %d] <- R_out[i, %d] - (%s)\n",
+        h_idx, j, h_idx, prev_strains_expr
+      ))
+    }
+  }
+}
+
 
 ## For n_IC 
 
