@@ -50,7 +50,8 @@ names <- c(colnames(wmel_mat), strain)
 wmel_mat <- cbind(wmel_mat, boot$t)
 colnames(wmel_mat) <- names
 }
-qsave(wmel_mat, here("data", "wmel-inhib-values.qs"))
+wmel_mat_out <- cbind(wmel_mat[,1:40], wmel_mat[,41:50], wmel_mat[,41:50], wmel_mat[,51:60], wmel_mat[,51:60])
+qsave(wmel_mat_out, here("data", "wmel-inhib-values.qs"))
 
 # wAlbB estimates
 
@@ -64,8 +65,8 @@ for(strain in strain_set){
   walbb_mat <- cbind(walbb_mat, boot$t)
   colnames(walbb_mat) <- names
 }
-
-qsave(walbb_mat, here("data", "walbb-inhib-values.qs"))
+walbb_mat_out <- cbind(walbb_mat[,1:40], walbb_mat[,41:50], walbb_mat[,41:50], walbb_mat[,51:60], walbb_mat[,51:60])
+qsave(walbb_mat_out, here("data", "walbb-inhib-values.qs"))
 # Plot values
 
 inhib_values <- as.data.frame(wmel_mat) |> 
