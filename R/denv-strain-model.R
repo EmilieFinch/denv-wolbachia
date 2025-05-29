@@ -75,7 +75,7 @@ update(N[]) <- if(ageing_day) demog[i, sim_year + 1] else N[i] # don't use sum o
 beta[] <- r0*gamma
 beta_adj[] <- if(wol_on == 1 && time >= wol_start) wol_inhib[i]*beta[i] else beta[i]
 
-lambda_local[] <- beta_adj[i] * sum(I[,,i])/sum(N_init[])  # strain specific lambda
+lambda_local[] <- beta_adj[i] * sum(I[,,i])/sum(N[])  # strain specific lambda
 lambda[] <- lambda_local[i] * (1 + amp_seas * cos(2 * 3.14159 * time/365 - phase_seas)) + ext_foi # add seasonality to lambda
 lambda_1 <- sum(lambda[1:20]) # DENV1 lambda
 lambda_2 <- sum(lambda[21:40]) # DENV2 lambda
@@ -87,7 +87,7 @@ lambda_total <- sum(lambda[])
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
 
-print("S[12]:{S[12]}, C[12,1]: {C[12,1]}, n_CR[12,1]: {n_CR[12,1]}, R[12,1]: {R[12,1]}, p_CR: {p_CR}, p_IC: {p_IC}")
+print("S[12]:{S[12]}, C[12,1]: {C[12,1]}, R[12,1]: {R[12,1]}, N[12]: {N[12]}, lambda[24]:{lambda[24]}")
 
 #### Draw number moving between compartments ####
 ## Note chain binomials for n_SI and n_RI at the end of the script 
@@ -150,6 +150,12 @@ update(prior_infection[3]) <- sum(R[,5:10])
 update(prior_infection[4]) <- sum(R[,11:14])
 update(prior_infection[5]) <- sum(R[,15])
 
+update(prior_denv1) <-sum(R[, 1]) + sum(R[, 5]) + sum(R[, 6]) + sum(R[, 7]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 15])
+update(prior_denv2) <- sum(R[, 2]) + sum(R[, 5]) + sum(R[, 8]) + sum(R[, 9]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 14]) + sum(R[, 15])
+update(prior_denv3) <- sum(R[, 3]) + sum(R[, 6]) + sum(R[, 8]) + sum(R[, 10]) + sum(R[, 11]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15])
+update(prior_denv4) <- sum(R[, 4]) + sum(R[, 7]) + sum(R[, 9]) + sum(R[, 10]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15])
+
+
 #### Initial states & dimensions ####
 initial(N[]) <- N_init[i]
 initial(S[]) <- if(i == 11) N_init[i] - 60 else N_init[i]
@@ -163,6 +169,10 @@ initial(R[,]) <- 0
 initial(inf[]) <- 0
 initial(inf_age[]) <- 0
 initial(prior_infection[]) <- 0
+initial(prior_denv1) <- 0
+initial(prior_denv2) <- 0
+initial(prior_denv3) <- 0
+initial(prior_denv4) <- 0
 
 dim(S) <- n_age
 dim(I) <- c(n_age, n_histories, n_strains)
