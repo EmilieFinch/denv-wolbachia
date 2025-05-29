@@ -34,13 +34,16 @@ wpp_all <- rbind(wpp_brazil, wpp_brazil_proj)
 return(wpp_all)
 }
 
-wrangle_demography <- function(demog, year_start, year_end){
+wrangle_demography <- function(demog, year_start, year_end, pad_left = 0){
   demog <- brazil_demog |> 
     filter(year >= year_start & year <= year_end) |> 
     pivot_wider(id_cols = "age_group", names_from = "year", values_from = "population") |> 
     select(- age_group) |> 
     round() |> 
   as.matrix()
+  
+  if(pad_left != 0){ 
+  demog <- cbind(matrix(demog[,1], nrow = nrow(demog), ncol = pad_left), demog)}
   
   return(demog)
 }
