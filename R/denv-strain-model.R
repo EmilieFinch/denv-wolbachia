@@ -44,7 +44,6 @@ phase_seas <- parameter(1.56)
 
 ## Wolbachia parameters
 wol_on <- parameter()
-wol_start <- parameter()
 wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
 #### Core equations ####
@@ -73,7 +72,7 @@ update(N[]) <- if(ageing_day) demog[i, sim_year] else N[i] # don't use sum of S,
 
 #### Calculate individual probabilities of transition ####
 beta[] <- r0*gamma
-beta_adj[] <- if(wol_on == 1 && time >= wol_start) wol_inhib[i]*beta[i] else beta[i]
+beta_adj[] <- if(wol_on == 1) wol_inhib[i]*beta[i] else beta[i]
 
 lambda_local[] <- beta_adj[i] * sum(I[,,i])/sum(N[])  # strain specific lambda
 lambda[] <- lambda_local[i] * (1 + amp_seas * cos(2 * 3.14159 * time/365 - phase_seas)) + ext_foi # add seasonality to lambda
@@ -87,7 +86,7 @@ lambda_total <- sum(lambda[])
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
 
-print("S[12]:{S[12]}, C[12,1]: {C[12,1]}, R[12,1]: {R[12,1]}, N[12]: {N[12]}, lambda[24]:{lambda[24]}, sim_year: {sim_year}, ageing_day: {ageing_day}, births: {births[1]}, S[1]: {S[1]}")
+print("sim_year: {sim_year}")
 
 #### Draw number moving between compartments ####
 ## Note chain binomials for n_SI and n_RI at the end of the script 
