@@ -1,19 +1,27 @@
-# Script to run denv simulations
+# Script to calibrate strain model
+## Calibrating from 1974 until 2024 using dynamic demography for Brazil
 
 source(here("R", "utils.R"))
-set.seed = 84
+
+## Set paths
+output_path <- here("output", "calibration")
+figure_path <- here("figures", "calibration")
+ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
+ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
+
 # Prepare model inputs
 
 brazil_demog <- load_demography()
-demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2024, pad_left = 49)
+demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2024, pad_left = 0)
 n_particles <- 1
+r0 <- 4
 
 ## Load generative model
 denv_mod <- odin2::odin(here("R/denv-strain-model.R"), debug = TRUE, skip_cache = TRUE) 
 start_time <- Sys.time()
 denv_sys <- dust_system_create(denv_mod, 
                           pars = list(n_age = 81,
-                                      r0 = 1.5,
+                                      r0 = r0,
                                       gamma = 0.2,
                                       nu = 1/365,
                                       demog = demog,
@@ -23,16 +31,16 @@ denv_sys <- dust_system_create(denv_mod,
                                       amp_seas = 0.2,
                                       phase_seas = 1.56,
                                       wol_on = 0,
-                                      wol_start = 0,
                                       wol_inhib = rep(0,80)),
-                          n_particles = n_particles,
-                          seed = 84)
+                          n_particles = n_particles)
 
 dust_system_set_state_initial(denv_sys) # use initial conditions defined in code
-t <- seq(1, 365*100, by = 28) #365*100 
+t <- c(seq(1, 365*51, by = 28), 365*51) #365*100 
 denv_out <- dust_system_simulate(denv_sys, t)
 denv_out <- dust_unpack_state(denv_sys, denv_out)
 
+denv_final <- dust_system_simulate(denv_sys, 365*51)
+qsave(denv_final, here(output_path, paste0("calibration-states_r0-", r0, ".qs")))
 print(Sys.time() - start_time)
 
 ## Wrangle outputs for plotting
@@ -55,10 +63,11 @@ immune_out <- as.data.frame(t(denv_out$prior_infection)) |>
     names_to = "prior_infection",
     values_to = "value") |> 
   mutate(prior_infection = as.numeric(gsub("^V", "", prior_infection)) - 1) |> 
-  left_join(data.frame(total_population = colSums(denv_out$N), time_step = 1:dim(denv_out$N)[2])) |>
-  mutate(proportion = value/total_population) |> 
-  ungroup() 
-
+  group_by(time) |> 
+  mutate(total = sum(value)) |> 
+  ungroup() |> 
+  mutate(proportion = value/total) 
+  
 serotype_out <- data.frame(prior_denv1 = denv_out$prior_denv1, prior_denv2 = denv_out$prior_denv2, 
                            prior_denv3 = denv_out$prior_denv3, prior_denv4 = denv_out$prior_denv4) |> 
   mutate(time = t, total_population = colSums(denv_out$N)) |> 
@@ -68,19 +77,28 @@ serotype_out <- data.frame(prior_denv1 = denv_out$prior_denv1, prior_denv2 = den
 ## Check outputs
 
 ## Strains over time
-ggplot(inf_out) + 
+strain_plot <- ggplot(inf_out) + 
   geom_line(aes(x = time, y = proportion, col = as.factor(strain), group = as.factor(strain))) +
+  labs(x = "Time", y = "Strain prevalence") +
+  theme(legend.position = "none")
+
+infection_plot <- ggplot(inf_out) + 
+  geom_line(aes(x = time, y = value, col = as.factor(strain), group = as.factor(strain))) +
   labs(x = "Time", y = "Infections") +
   theme(legend.position = "none")
 
 ## Immunity over time
-
-ggplot(immune_out) +
+immune_plot <- ggplot(immune_out) +
   geom_area(aes(x = time, y = proportion,  fill = as.factor(prior_infection), group = as.factor(prior_infection))) +
   labs(x = "Time", y = "Proportion", fill = "Number of prior infections")
 
 ## Serotype over time
+serotype_plot <- ggplot(serotype_out) +
+  geom_line(aes(x = time, y = proportion, col = name, group = name)) +
+  labs(x = "Time", y = "Proportion of the population", color = "Prior serotype immunity")
 
-ggplot(serotype_out) +
-  geom_line(aes(x = time, y = proportion, col = name, group = name))
+
+calibration_plots <- ggarrange(infection_plot, strain_plot, immune_plot, serotype_plot, nrow = 4)
+calibration_plots <- annotate_figure(calibration_plots, top= text_grob(paste0("Calibration plots with R0 = ", r0), family = plot_font))
+ggsave(here(figure_path, paste0("calibration-plots_r0-", r0, ".png")), width = 180, height = 240, unit = "mm", dpi = 300, plot = calibration_plots)
 
