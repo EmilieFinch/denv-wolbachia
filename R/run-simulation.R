@@ -1,7 +1,7 @@
 ## Run model simulations
 
 source(here("R", "utils.R"))
-output_path <- here("output", "simulation")
+output_path <- here("output", "simulation", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 
 # config
@@ -54,12 +54,32 @@ print(paste0("Running simulations for r0: ", r0, " and mosquito: ", mosquito))
 sim_raw <- dust_system_simulate(denv_sys, t, index_state = idx)
 
 ## Wrangle and save output
+print(paste0("Saving output for r0: ", r0, " and mosquito: ", mosquito))
+
+### Raw simulations
 sim_out <- as.data.frame.table(sim_raw) |> 
   rename(state = Var1, run = Var2, time = Var3, value = Freq) |> 
   mutate(run = as.numeric(run), time = as.numeric(time)) |> 
-  extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) 
+  extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) |> 
+  mutate(mosquito = mosquito, r0 = r0)
 
 qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_", mosquito, ".qs")))
+
+### Quantiles
+sim_out |>  
+  group_by(state, name, level, time, mosquito, r0) |> 
+  summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
+            q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975))  
+qsave(wmel_r0_2_quantile, here(output_path, paste0("quantile-out_r0-",r0, "_", mosquito, ".qs")))
+
+### Strain diversity
+sim_out |>  
+  filter(name == "inf") |> 
+  group_by(name, run, time, mosquito, r0) |> 
+  mutate(proportion = value/sum(value)) |> 
+  group_by(name, run, time, mosquito, r0) |> 
+  summarise(simpson_index = 1 - sum(proportion^2), number = sum(value > 0)) 
+qsave(wmel_r0_2_quantile, here(output_path, paste0("strain-div-out_r0-",r0, "_", mosquito, ".qs")))
 
 print(Sys.time() - start_time)
 print(paste0("Completed simulations for r0: ", r0, " and mosquito: ", mosquito))
