@@ -1,12 +1,17 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   here, dplyr, janitor, tidyr, readxl, sf, ggplot2,
-  showtext, stringr, ggplot2, patchwork, stringr, 
-  tibble, yaml,qs, lubridate, sf, abind, geofacet, data.table, spdep, igraph
+  showtext, stringr, ggplot2, patchwork, stringr, ggpubr,
+  tibble, yaml,qs, lubridate, sf, abind, geofacet, data.table, 
+  spdep, igraph, boot
 )
 
 if(!require("odin2")) install.packages(
   "odin2",
+  repos = c("https://mrc-ide.r-universe.dev", "https://cloud.r-project.org"))
+
+if(!require("dust2")) install.packages(
+  "dust2",
   repos = c("https://mrc-ide.r-universe.dev", "https://cloud.r-project.org"))
 
 # Set up plot font
