@@ -58,11 +58,6 @@ ggsave(here(figure_path, "strain-infection-plot.png"), width = 180, height = 240
 
 
 infection_plot_zoom <- quantiles_plot |> 
-  filter(name == "inf") |> 
-  mutate(r0 = factor(r0, levels = c(1.5, 2,4), labels = c("R0 = 1.5", "R0 = 2", "R0 = 4")), 
-         mosquito = factor(mosquito, levels = c("wmel", "walbb", "wt"), labels = c("wMel", "wAlbB", "WT")),
-         year = time + as.Date("2025-01-01"),
-         strain = as.numeric(level), strain = factor(strain, levels = 1:80, labels = strain_names)) |>
   ggplot() + 
   geom_ribbon(aes(x = year, ymin = q_0.25, ymax = q_0.75, fill = strain, group = strain), alpha = 0.4) +
   geom_ribbon(aes(x = year, ymin = q_0.025, ymax = q_0.975, fill = strain, group = strain), alpha = 0.2) +
