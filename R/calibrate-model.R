@@ -4,17 +4,21 @@
 source(here("R", "utils.R"))
 
 ## Set paths
-output_path <- here("output", "calibration")
-figure_path <- here("figures", "calibration")
+output_path <- here("output", "calibration", Sys.Date())
+figure_path <- here("figures", "calibration", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
 # Prepare model inputs
+r0s <- c(4,2,1.5)
 
-brazil_demog <- load_demography()
-demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2024, pad_left = 0)
+for(r0 in r0s){ 
+cat(paste0("Running calibration for r0: ", r0, "\n"))
+  
 n_particles <- 1
-r0 <- 4
+calibration_years <- 50
+brazil_demog <- load_demography()
+demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2024, pad_left = max(calibration_years - 51, 0))
 
 ## Load generative model
 denv_mod <- odin2::odin(here("R/denv-strain-model.R"), debug = TRUE, skip_cache = TRUE) 
@@ -27,19 +31,20 @@ denv_sys <- dust_system_create(denv_mod,
                                       demog = demog,
                                       scenario_years = ncol(demog),
                                       N_init = demog[,1],
+                                      seasonality = 0,
                                       ext_foi = 1e-8, # external FOI to ensure strains don't go extinct during calibration
                                       amp_seas = 0.2,
                                       phase_seas = 1.56,
                                       wol_on = 0,
-                                      wol_inhib = rep(0,80)),
+                                      wol_inhib = rep(1,80)),
                           n_particles = n_particles)
 
 dust_system_set_state_initial(denv_sys) # use initial conditions defined in code
-t <- c(seq(1, 365*51, by = 28), 365*51) #365*100 
+t <- c(seq(1, 365*calibration_years, by = 28), 365*calibration_years) 
 denv_out <- dust_system_simulate(denv_sys, t)
 denv_out <- dust_unpack_state(denv_sys, denv_out)
 
-denv_final <- dust_system_simulate(denv_sys, 365*51)
+denv_final <- dust_system_simulate(denv_sys, 365*calibration_years)
 qsave(denv_final, here(output_path, paste0("calibration-states_r0-", r0, ".qs")))
 print(Sys.time() - start_time)
 
@@ -69,8 +74,8 @@ immune_out <- as.data.frame(t(denv_out$prior_infection)) |>
   mutate(proportion = value/total) 
   
 serotype_out <- data.frame(prior_denv1 = denv_out$prior_denv1, prior_denv2 = denv_out$prior_denv2, 
-                           prior_denv3 = denv_out$prior_denv3, prior_denv4 = denv_out$prior_denv4) |> 
-  mutate(time = t, total_population = colSums(denv_out$N)) |> 
+                           prior_denv3 = denv_out$prior_denv3, prior_denv4 = denv_out$prior_denv4) |>
+  mutate(time = t, total_population = colSums(denv_out$N)) |>  
   pivot_longer(cols = c("prior_denv1", "prior_denv2", "prior_denv3", "prior_denv4")) |> 
   mutate(proportion = value/total_population)
 
@@ -101,4 +106,5 @@ serotype_plot <- ggplot(serotype_out) +
 calibration_plots <- ggarrange(infection_plot, strain_plot, immune_plot, serotype_plot, nrow = 4)
 calibration_plots <- annotate_figure(calibration_plots, top= text_grob(paste0("Calibration plots with R0 = ", r0), family = plot_font))
 ggsave(here(figure_path, paste0("calibration-plots_r0-", r0, ".png")), width = 180, height = 240, unit = "mm", dpi = 300, plot = calibration_plots)
-
+rm(denv_out, denv_final, denv_sys)
+}
