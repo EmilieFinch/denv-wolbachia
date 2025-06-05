@@ -8,10 +8,11 @@
 ## 6. Burden tracking
 ## 7. Initial states and dimensions
 
-### Compartments S, I and R are stratified by 
+### Compartments are stratified by 
 ## i for the age group (number of age groups specified by n_age, with age group width specified in size_age)
-## j for state
-## Compartments C and R are also stratified by 
+## Compartments C , I and R are also stratified by 
+## j for immune history
+## Compartment I is also stratified by
 ## k for immune history
 ## The levels of this are:
 ## 1, 2, 3, 4, 12, 13, 14, 23, 24, 34, 123, 124, 134, 234, 1234
@@ -39,6 +40,7 @@ ageing_day <- (time %% 365 == 0 && time != 0) # population ages once a year
 initial(day_of_year, zero_every = 365) <- 0
 update(day_of_year) <- day_of_year + 1
 ext_foi <- parameter()
+seasonality <- parameter(0)
 amp_seas <- parameter(0.2)
 phase_seas <- parameter(1.56)
 
@@ -47,35 +49,36 @@ wol_on <- parameter()
 wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
 #### Core equations ####
-update(S[]) <- if(i == 1 && ageing_day) births[day_of_year + 1] else 
+update(S[]) <- floor((if(i == 1 && ageing_day) births[day_of_year + 1] else 
   if(i == 1) births[day_of_year] + S[i] - S_out[i] else
   if(ageing_day && i > 1) S[i-1] - S_out[i-1] else
-  S[i] - S_out[i]
+  S[i] - S_out[i]) * shift[i])
 
-update(I[,1,]) <- if(ageing_day && i == 1) 0 else
+update(I[,1,]) <- floor((if(ageing_day && i == 1) 0 else
   if(ageing_day && i > 1)  I[i-1,j,k] - I_out[i-1,j,k] + n_SI[i-1,k] else 
-    I[i,j,k] - I_out[i,j,k] + n_SI[i,k]
+    I[i,j,k] - I_out[i,j,k] + n_SI[i,k]) * shift[i])
 
-update(I[,2:n_histories,]) <- if(ageing_day && i == 1) 0 else
+update(I[,2:n_histories,]) <- floor((if(ageing_day && i == 1) 0 else
   if(ageing_day && i > 1) I[i-1,j,k] - I_out[i-1,j,k] + n_RI[i-1,j-1,k] else
-    I[i,j,k] - I_out[i,j,k] + n_RI[i,j-1,k]
+    I[i,j,k] - I_out[i,j,k] + n_RI[i,j-1,k]) *shift[i])
 
-update(C[,]) <- if(ageing_day && i == 1) 0 else
+update(C[,]) <- floor((if(ageing_day && i == 1) 0 else
  if(ageing_day && i > 1) C[i-1,j] - n_CR[i-1,j] + n_IC[i-1,j] else
-    C[i,j] - n_CR[i,j] + n_IC[i,j]
+    C[i,j] - n_CR[i,j] + n_IC[i,j])*shift[i])
 
-update(R[,]) <- if(ageing_day && i == 1) 0 else
+update(R[,]) <- floor((if(ageing_day && i == 1) 0 else
   if(ageing_day && i > 1) R[i-1,j] - R_out[i-1,j] + n_CR[i-1,j] else
-    R[i,j] - R_out[i,j] + n_CR[i,j]
+    R[i,j] - R_out[i,j] + n_CR[i,j])*shift[i])
 
 update(N[]) <- if(ageing_day) demog[i, sim_year] else N[i] # don't use sum of S, I, C and R to avoid introducing lag in N
 
 #### Calculate individual probabilities of transition ####
 beta[] <- r0*gamma
 beta_adj[] <- if(wol_on == 1) wol_inhib[i]*beta[i] else beta[i]
+update(r0_out[]) <- beta_adj[i]/gamma
 
 lambda_local[] <- beta_adj[i] * sum(I[,,i])/sum(N[])  # strain specific lambda
-lambda[] <- lambda_local[i] * (1 + amp_seas * cos(2 * 3.14159 * time/365 - phase_seas)) + ext_foi # add seasonality to lambda
+lambda[] <- if(seasonality == 1) lambda_local[i] * (1 + amp_seas * cos(2 * 3.14159 * time/365 - phase_seas)) + ext_foi else lambda_local[i] + ext_foi # add seasonality to lambda
 lambda_1 <- sum(lambda[1:20]) # DENV1 lambda
 lambda_2 <- sum(lambda[21:40]) # DENV2 lambda
 lambda_3 <- sum(lambda[41:60]) # DENV3 lambda
@@ -86,7 +89,7 @@ lambda_total <- sum(lambda[])
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
 
-print("sim_year: {sim_year}")
+print("sim_year: {sim_year}, r0_out[12]: {r0_out[12]}, lambda[12]: {lambda[12]}, lambda_total: {lambda_total}, I_example: {I[12,7,20]}")
 
 #### Draw number moving between compartments ####
 ## Note chain binomials for n_SI and n_RI at the end of the script 
@@ -132,9 +135,9 @@ remainder <- demog[1,sim_year] %% 365
 births[] <- if(sim_year != 1 && i <= remainder) births_per_day + 1 else if(sim_year!= 1 && i > remainder) births_per_day else 0
 
 ## each year adjust each compartment to match demography data
-#current_N[] <- S[i] + sum(I[i,,]) + sum(C[i,]) + sum(R[i,])
-#shift[2:n_age] <- if(ageing_day && current_N[i-1] > 0) demog[i, sim_year+1]/current_N[i-1] else 1.0 # adjust population sizes so they match demographic data from upcoming year
-##shift[1] <- 1 # for youngest age group all enter as susceptible
+current_N[] <- S[i] + sum(I[i,,]) + sum(C[i,]) + sum(R[i,])
+shift[2:n_age] <- if(ageing_day && current_N[i-1] > 0) demog[i, sim_year]/current_N[i-1] else 1.0 # adjust population sizes so they match demographic data from upcoming year
+shift[1] <- 1 # for youngest age group all enter as susceptible
 
 #### Track burden outputs ####
 ## Infections by strain
@@ -162,9 +165,9 @@ initial(I[11,1,1:20]) <- 1
 initial(I[11,2,21:40]) <- 1
 initial(I[11,3,41:60]) <- 1
 initial(I[11,4,61:80]) <- 1
-
 initial(C[,]) <- 0
 initial(R[,]) <- 0
+initial(r0_out[]) <- r0
 initial(inf[]) <- 0
 initial(inf_age[]) <- 0
 initial(prior_infection[]) <- 0
@@ -181,6 +184,7 @@ dim(S_out) <- n_age
 dim(N_init) <- n_age
 dim(beta) <- n_strains
 dim(beta_adj) <- n_strains
+dim(r0_out) <- n_strains
 dim(wol_inhib) <- n_strains
 dim(lambda_local) <- n_strains
 dim(lambda) <- n_strains
@@ -196,8 +200,8 @@ dim(inf_age) <- n_age
 dim(prior_infection) <- c(5)
 dim(demog) <- c(n_age, scenario_years)
 dim(births) <- c(365)
-#dim(shift) <- c(n_age)
-#dim(current_N) <- c(n_age)
+dim(shift) <- c(n_age)
+dim(current_N) <- c(n_age)
 
 ## Chain binomial for strain specific infections ## 
 ## From susceptible
@@ -280,7 +284,7 @@ n_SI[, 76] <- if (sum(lambda[76:80]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:75])
 n_SI[, 77] <- if (sum(lambda[77:80]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:76]), lambda[77] / sum(lambda[77:80])) else 0
 n_SI[, 78] <- if (sum(lambda[78:80]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:77]), lambda[78] / sum(lambda[78:80])) else 0
 n_SI[, 79] <- if (sum(lambda[79:80]) > 0) Binomial(S_out[i] - sum(n_SI[i, 1:78]), lambda[79] / sum(lambda[79:80])) else 0
-n_SI[, 80] <- S_out[i] - sum(n_SI[i, 1:79])
+n_SI[, 80] <- max(S_out[i] - sum(n_SI[i, 1:79]),0)
 
 ## After 1 infection 
 ### Can be infected with 2,3 & 4
@@ -343,7 +347,7 @@ n_RI[, 1, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 1] - (sum(n_RI[
 n_RI[, 1, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 1] - (sum(n_RI[i, 1, 21:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 1, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 1] - (sum(n_RI[i, 1, 21:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 1, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 1] - (sum(n_RI[i, 1, 21:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 1, 80] <- R_out[i, 1] - (sum(n_RI[i, 1, 21:79]))
+n_RI[, 1, 80] <- max(R_out[i, 1] - (sum(n_RI[i, 1, 21:79])),0)
 ## Can be infected with 1,3 and 4
 n_RI[, 2, 1] <- if ((sum(lambda[1:20]) + sum(lambda[41:80])) > 0) Binomial(R_out[i, 2], lambda[1] / (sum(lambda[1:20]) + sum(lambda[41:80]))) else 0
 n_RI[, 2, 2] <- if ((sum(lambda[2:20]) + sum(lambda[41:80])) > 0) Binomial(R_out[i, 2] - (n_RI[i, 2, 1]), lambda[2] / (sum(lambda[2:20]) + sum(lambda[41:80]))) else 0
@@ -404,7 +408,7 @@ n_RI[, 2, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 2] - (sum(n_RI[
 n_RI[, 2, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 2] - (sum(n_RI[i, 2, 1:20]) + sum(n_RI[i, 2, 41:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 2, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 2] - (sum(n_RI[i, 2, 1:20]) + sum(n_RI[i, 2, 41:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 2, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 2] - (sum(n_RI[i, 2, 1:20]) + sum(n_RI[i, 2, 41:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 2, 80] <- R_out[i, 2] - (sum(n_RI[i, 2, 1:20]) + sum(n_RI[i, 2, 41:79]))
+n_RI[, 2, 80] <- max(R_out[i, 2] - (sum(n_RI[i, 2, 1:20]) + sum(n_RI[i, 2, 41:79])),0)
 ## Can be infected with 1,2 and 4
 n_RI[, 3, 1] <- if ((sum(lambda[1:40]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 3], lambda[1] / (sum(lambda[1:40]) + sum(lambda[61:80]))) else 0
 n_RI[, 3, 2] <- if ((sum(lambda[2:40]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 3] - (n_RI[i, 3, 1]), lambda[2] / (sum(lambda[2:40]) + sum(lambda[61:80]))) else 0
@@ -465,7 +469,7 @@ n_RI[, 3, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 3] - (sum(n_RI[
 n_RI[, 3, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 3] - (sum(n_RI[i, 3, 1:40]) + sum(n_RI[i, 3, 61:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 3, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 3] - (sum(n_RI[i, 3, 1:40]) + sum(n_RI[i, 3, 61:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 3, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 3] - (sum(n_RI[i, 3, 1:40]) + sum(n_RI[i, 3, 61:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 3, 80] <- R_out[i, 3] - (sum(n_RI[i, 3, 1:40]) + sum(n_RI[i, 3, 61:79]))
+n_RI[, 3, 80] <- max(R_out[i, 3] - (sum(n_RI[i, 3, 1:40]) + sum(n_RI[i, 3, 61:79])),0)
 ## Can be infected with 1,2&3
 n_RI[, 4, 1] <- if ((sum(lambda[1:60])) > 0) Binomial(R_out[i, 4], lambda[1] / (sum(lambda[1:60]))) else 0
 n_RI[, 4, 2] <- if ((sum(lambda[2:60])) > 0) Binomial(R_out[i, 4] - (n_RI[i, 4, 1]), lambda[2] / (sum(lambda[2:60]))) else 0
@@ -526,7 +530,7 @@ n_RI[, 4, 56] <- if ((sum(lambda[56:60])) > 0) Binomial(R_out[i, 4] - (sum(n_RI[
 n_RI[, 4, 57] <- if ((sum(lambda[57:60])) > 0) Binomial(R_out[i, 4] - (sum(n_RI[i, 4, 1:56])), lambda[57] / (sum(lambda[57:60]))) else 0
 n_RI[, 4, 58] <- if ((sum(lambda[58:60])) > 0) Binomial(R_out[i, 4] - (sum(n_RI[i, 4, 1:57])), lambda[58] / (sum(lambda[58:60]))) else 0
 n_RI[, 4, 59] <- if ((sum(lambda[59:60])) > 0) Binomial(R_out[i, 4] - (sum(n_RI[i, 4, 1:58])), lambda[59] / (sum(lambda[59:60]))) else 0
-n_RI[, 4, 60] <- R_out[i, 4] - (sum(n_RI[i, 4, 1:59]))
+n_RI[, 4, 60] <- max(R_out[i, 4] - (sum(n_RI[i, 4, 1:59])),0)
 
 ## After 2 infections
 ## Can be infected with 3&4
@@ -569,7 +573,7 @@ n_RI[, 5, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 5] - (sum(n_RI[
 n_RI[, 5, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 5] - (sum(n_RI[i, 5, 41:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 5, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 5] - (sum(n_RI[i, 5, 41:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 5, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 5] - (sum(n_RI[i, 5, 41:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 5, 80] <- R_out[i, 5] - (sum(n_RI[i, 5, 41:79]))
+n_RI[, 5, 80] <- max(R_out[i, 5] - (sum(n_RI[i, 5, 41:79])),0)
 ## Can be infected with 2&4
 n_RI[, 6, 21] <- if ((sum(lambda[21:40]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 6], lambda[21] / (sum(lambda[21:40]) + sum(lambda[61:80]))) else 0
 n_RI[, 6, 22] <- if ((sum(lambda[22:40]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 6] - (n_RI[i, 6, 21]), lambda[22] / (sum(lambda[22:40]) + sum(lambda[61:80]))) else 0
@@ -610,7 +614,7 @@ n_RI[, 6, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 6] - (sum(n_RI[
 n_RI[, 6, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 6] - (sum(n_RI[i, 6, 21:40]) + sum(n_RI[i, 6, 61:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 6, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 6] - (sum(n_RI[i, 6, 21:40]) + sum(n_RI[i, 6, 61:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 6, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 6] - (sum(n_RI[i, 6, 21:40]) + sum(n_RI[i, 6, 61:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 6, 80] <- R_out[i, 6] - (sum(n_RI[i, 6, 21:40]) + sum(n_RI[i, 6, 61:79]))
+n_RI[, 6, 80] <- max(R_out[i, 6] - (sum(n_RI[i, 6, 21:40]) + sum(n_RI[i, 6, 61:79])),0)
 ## Can be infected with 2&3
 n_RI[, 7, 21] <- if ((sum(lambda[21:60])) > 0) Binomial(R_out[i, 7], lambda[21] / (sum(lambda[21:60]))) else 0
 n_RI[, 7, 22] <- if ((sum(lambda[22:60])) > 0) Binomial(R_out[i, 7] - (n_RI[i, 7, 21]), lambda[22] / (sum(lambda[22:60]))) else 0
@@ -651,7 +655,7 @@ n_RI[, 7, 56] <- if ((sum(lambda[56:60])) > 0) Binomial(R_out[i, 7] - (sum(n_RI[
 n_RI[, 7, 57] <- if ((sum(lambda[57:60])) > 0) Binomial(R_out[i, 7] - (sum(n_RI[i, 7, 21:56])), lambda[57] / (sum(lambda[57:60]))) else 0
 n_RI[, 7, 58] <- if ((sum(lambda[58:60])) > 0) Binomial(R_out[i, 7] - (sum(n_RI[i, 7, 21:57])), lambda[58] / (sum(lambda[58:60]))) else 0
 n_RI[, 7, 59] <- if ((sum(lambda[59:60])) > 0) Binomial(R_out[i, 7] - (sum(n_RI[i, 7, 21:58])), lambda[59] / (sum(lambda[59:60]))) else 0
-n_RI[, 7, 60] <- R_out[i, 7] - (sum(n_RI[i, 7, 21:59]))
+n_RI[, 7, 60] <- max(R_out[i, 7] - (sum(n_RI[i, 7, 21:59])),0)
 ## Can be infected with 1 and 4
 n_RI[, 8, 1] <- if ((sum(lambda[1:20]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 8], lambda[1] / (sum(lambda[1:20]) + sum(lambda[61:80]))) else 0
 n_RI[, 8, 2] <- if ((sum(lambda[2:20]) + sum(lambda[61:80])) > 0) Binomial(R_out[i, 8] - (n_RI[i, 8, 1]), lambda[2] / (sum(lambda[2:20]) + sum(lambda[61:80]))) else 0
@@ -692,7 +696,7 @@ n_RI[, 8, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 8] - (sum(n_RI[
 n_RI[, 8, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 8] - (sum(n_RI[i, 8, 1:20]) + sum(n_RI[i, 8, 61:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 8, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 8] - (sum(n_RI[i, 8, 1:20]) + sum(n_RI[i, 8, 61:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 8, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 8] - (sum(n_RI[i, 8, 1:20]) + sum(n_RI[i, 8, 61:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 8, 80] <- R_out[i, 8] - (sum(n_RI[i, 8, 1:20]) + sum(n_RI[i, 8, 61:79]))
+n_RI[, 8, 80] <- max(R_out[i, 8] - (sum(n_RI[i, 8, 1:20]) + sum(n_RI[i, 8, 61:79])),0)
 ## Can be infected with 1 and 3
 n_RI[, 9, 1] <- if ((sum(lambda[1:20]) + sum(lambda[41:60])) > 0) Binomial(R_out[i, 9], lambda[1] / (sum(lambda[1:20]) + sum(lambda[41:60]))) else 0
 n_RI[, 9, 2] <- if ((sum(lambda[2:20]) + sum(lambda[41:60])) > 0) Binomial(R_out[i, 9] - (n_RI[i, 9, 1]), lambda[2] / (sum(lambda[2:20]) + sum(lambda[41:60]))) else 0
@@ -733,7 +737,7 @@ n_RI[, 9, 56] <- if ((sum(lambda[56:60])) > 0) Binomial(R_out[i, 9] - (sum(n_RI[
 n_RI[, 9, 57] <- if ((sum(lambda[57:60])) > 0) Binomial(R_out[i, 9] - (sum(n_RI[i, 9, 1:20]) + sum(n_RI[i, 9, 41:56])), lambda[57] / (sum(lambda[57:60]))) else 0
 n_RI[, 9, 58] <- if ((sum(lambda[58:60])) > 0) Binomial(R_out[i, 9] - (sum(n_RI[i, 9, 1:20]) + sum(n_RI[i, 9, 41:57])), lambda[58] / (sum(lambda[58:60]))) else 0
 n_RI[, 9, 59] <- if ((sum(lambda[59:60])) > 0) Binomial(R_out[i, 9] - (sum(n_RI[i, 9, 1:20]) + sum(n_RI[i, 9, 41:58])), lambda[59] / (sum(lambda[59:60]))) else 0
-n_RI[, 9, 60] <- R_out[i, 9] - (sum(n_RI[i, 9, 1:20]) + sum(n_RI[i, 9, 41:59]))
+n_RI[, 9, 60] <- max(R_out[i, 9] - (sum(n_RI[i, 9, 1:20]) + sum(n_RI[i, 9, 41:59])),0)
 ##Can be infected with 1 and 2
 n_RI[, 10, 1] <- if ((sum(lambda[1:40])) > 0) Binomial(R_out[i, 10], lambda[1] / (sum(lambda[1:40]))) else 0
 n_RI[, 10, 2] <- if ((sum(lambda[2:40])) > 0) Binomial(R_out[i, 10] - (n_RI[i, 10, 1]), lambda[2] / (sum(lambda[2:40]))) else 0
@@ -774,7 +778,7 @@ n_RI[, 10, 36] <- if ((sum(lambda[36:40])) > 0) Binomial(R_out[i, 10] - (sum(n_R
 n_RI[, 10, 37] <- if ((sum(lambda[37:40])) > 0) Binomial(R_out[i, 10] - (sum(n_RI[i, 10, 1:36])), lambda[37] / (sum(lambda[37:40]))) else 0
 n_RI[, 10, 38] <- if ((sum(lambda[38:40])) > 0) Binomial(R_out[i, 10] - (sum(n_RI[i, 10, 1:37])), lambda[38] / (sum(lambda[38:40]))) else 0
 n_RI[, 10, 39] <- if ((sum(lambda[39:40])) > 0) Binomial(R_out[i, 10] - (sum(n_RI[i, 10, 1:38])), lambda[39] / (sum(lambda[39:40]))) else 0
-n_RI[, 10, 40] <- R_out[i, 10] - (sum(n_RI[i, 10, 1:39]))
+n_RI[, 10, 40] <- max(R_out[i, 10] - (sum(n_RI[i, 10, 1:39])),0)
 ## After 3 infections
 ## Can be infected iwth 4
 n_RI[, 11, 61] <- if ((sum(lambda[61:80])) > 0) Binomial(R_out[i, 11], lambda[61] / (sum(lambda[61:80]))) else 0
@@ -796,7 +800,7 @@ n_RI[, 11, 76] <- if ((sum(lambda[76:80])) > 0) Binomial(R_out[i, 11] - (sum(n_R
 n_RI[, 11, 77] <- if ((sum(lambda[77:80])) > 0) Binomial(R_out[i, 11] - (sum(n_RI[i, 11, 61:76])), lambda[77] / (sum(lambda[77:80]))) else 0
 n_RI[, 11, 78] <- if ((sum(lambda[78:80])) > 0) Binomial(R_out[i, 11] - (sum(n_RI[i, 11, 61:77])), lambda[78] / (sum(lambda[78:80]))) else 0
 n_RI[, 11, 79] <- if ((sum(lambda[79:80])) > 0) Binomial(R_out[i, 11] - (sum(n_RI[i, 11, 61:78])), lambda[79] / (sum(lambda[79:80]))) else 0
-n_RI[, 11, 80] <- R_out[i, 11] - (sum(n_RI[i, 11, 61:79]))
+n_RI[, 11, 80] <- max(R_out[i, 11] - (sum(n_RI[i, 11, 61:79])),0)
 ##Can be infected with 3
 n_RI[, 12, 41] <- if ((sum(lambda[41:60])) > 0) Binomial(R_out[i, 12], lambda[41] / (sum(lambda[41:60]))) else 0
 n_RI[, 12, 42] <- if ((sum(lambda[42:60])) > 0) Binomial(R_out[i, 12] - (n_RI[i, 12, 41]), lambda[42] / (sum(lambda[42:60]))) else 0
@@ -817,7 +821,7 @@ n_RI[, 12, 56] <- if ((sum(lambda[56:60])) > 0) Binomial(R_out[i, 12] - (sum(n_R
 n_RI[, 12, 57] <- if ((sum(lambda[57:60])) > 0) Binomial(R_out[i, 12] - (sum(n_RI[i, 12, 41:56])), lambda[57] / (sum(lambda[57:60]))) else 0
 n_RI[, 12, 58] <- if ((sum(lambda[58:60])) > 0) Binomial(R_out[i, 12] - (sum(n_RI[i, 12, 41:57])), lambda[58] / (sum(lambda[58:60]))) else 0
 n_RI[, 12, 59] <- if ((sum(lambda[59:60])) > 0) Binomial(R_out[i, 12] - (sum(n_RI[i, 12, 41:58])), lambda[59] / (sum(lambda[59:60]))) else 0
-n_RI[, 12, 60] <- R_out[i, 12] - (sum(n_RI[i, 12, 41:59]))
+n_RI[, 12, 60] <- max(R_out[i, 12] - (sum(n_RI[i, 12, 41:59])),0)
 ## Can be infected with 2
 n_RI[, 13, 21] <- if ((sum(lambda[21:40])) > 0) Binomial(R_out[i, 13], lambda[21] / (sum(lambda[21:40]))) else 0
 n_RI[, 13, 22] <- if ((sum(lambda[22:40])) > 0) Binomial(R_out[i, 13] - (n_RI[i, 13, 21]), lambda[22] / (sum(lambda[22:40]))) else 0
@@ -838,7 +842,7 @@ n_RI[, 13, 36] <- if ((sum(lambda[36:40])) > 0) Binomial(R_out[i, 13] - (sum(n_R
 n_RI[, 13, 37] <- if ((sum(lambda[37:40])) > 0) Binomial(R_out[i, 13] - (sum(n_RI[i, 13, 21:36])), lambda[37] / (sum(lambda[37:40]))) else 0
 n_RI[, 13, 38] <- if ((sum(lambda[38:40])) > 0) Binomial(R_out[i, 13] - (sum(n_RI[i, 13, 21:37])), lambda[38] / (sum(lambda[38:40]))) else 0
 n_RI[, 13, 39] <- if ((sum(lambda[39:40])) > 0) Binomial(R_out[i, 13] - (sum(n_RI[i, 13, 21:38])), lambda[39] / (sum(lambda[39:40]))) else 0
-n_RI[, 13, 40] <- R_out[i, 13] - (sum(n_RI[i, 13, 21:39]))
+n_RI[, 13, 40] <- max(R_out[i, 13] - (sum(n_RI[i, 13, 21:39])),0)
 ## Can be infected with 1
 n_RI[, 14, 1] <- if ((sum(lambda[1:20])) > 0) Binomial(R_out[i, 14], lambda[1] / (sum(lambda[1:20]))) else 0
 n_RI[, 14, 2] <- if ((sum(lambda[2:20])) > 0) Binomial(R_out[i, 14] - (n_RI[i, 14, 1]), lambda[2] / (sum(lambda[2:20]))) else 0
@@ -859,4 +863,4 @@ n_RI[, 14, 16] <- if ((sum(lambda[16:20])) > 0) Binomial(R_out[i, 14] - (sum(n_R
 n_RI[, 14, 17] <- if ((sum(lambda[17:20])) > 0) Binomial(R_out[i, 14] - (sum(n_RI[i, 14, 1:16])), lambda[17] / (sum(lambda[17:20]))) else 0
 n_RI[, 14, 18] <- if ((sum(lambda[18:20])) > 0) Binomial(R_out[i, 14] - (sum(n_RI[i, 14, 1:17])), lambda[18] / (sum(lambda[18:20]))) else 0
 n_RI[, 14, 19] <- if ((sum(lambda[19:20])) > 0) Binomial(R_out[i, 14] - (sum(n_RI[i, 14, 1:18])), lambda[19] / (sum(lambda[19:20]))) else 0
-n_RI[, 14, 20] <- R_out[i, 14] - (sum(n_RI[i, 14, 1:19]))
+n_RI[, 14, 20] <- max(R_out[i, 14] - (sum(n_RI[i, 14, 1:19])),0)
