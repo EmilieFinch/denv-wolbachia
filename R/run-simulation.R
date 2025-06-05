@@ -8,7 +8,7 @@ ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALS
 n_particles <- 50
 simulation_years <- 10
 
-r0s <- c(2, 4)
+r0s <- c(4, 2, 1.5)
 mosquitos <- c("wmel", "walbb", "wt")
 for(r0 in r0s){
   for(mosquito in mosquitos){
@@ -17,7 +17,7 @@ for(r0 in r0s){
 brazil_demog <- load_demography()
 demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2070, pad_left = 0)
 
-initial_states <- qread(here("output", "calibration", paste0("calibration-states_r0-", r0, ".qs")))
+initial_states <- qread(here("output", "calibration", "2025-06-04", paste0("calibration-states_r0-", r0, ".qs")))
 
 if(mosquito == "wt"){
   wol_inhib <- rep(1,80)
@@ -36,7 +36,8 @@ denv_sys <- dust_system_create(denv_mod,
                                            demog = demog,
                                            scenario_years = ncol(demog),
                                            N_init = demog[,1],
-                                           ext_foi = 0, # external FOI set to 0 for simulation
+                                           seasonality = 0,
+                                           ext_foi = 1e-8, # external FOI set to 0 for simulation
                                            amp_seas = 0.2,
                                            phase_seas = 1.56,
                                            wol_on = 1,
@@ -50,11 +51,11 @@ idx <- c("prior_infection" = dust_unpack_index(denv_sys)$prior_infection, "prior
 dust_system_set_state(denv_sys, as.vector(initial_states)) # use initial conditions defined in code
 t <- seq(1, 365*simulation_years, by = 1) 
 
-print(paste0("Running simulations for r0: ", r0, " and mosquito: ", mosquito))
+cat(paste0("Running simulations for r0: ", r0, " and mosquito: ", mosquito))
 sim_raw <- dust_system_simulate(denv_sys, t, index_state = idx)
 
 ## Wrangle and save output
-print(paste0("Saving output for r0: ", r0, " and mosquito: ", mosquito))
+cat(paste0("Saving output for r0: ", r0, " and mosquito: ", mosquito))
 
 ### Raw simulations
 sim_out <- as.data.frame.table(sim_raw) |> 
@@ -66,23 +67,23 @@ sim_out <- as.data.frame.table(sim_raw) |>
 qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_", mosquito, ".qs")))
 
 ### Quantiles
-sim_out |>  
+quantiles_out <- sim_out |>  
   group_by(state, name, level, time, mosquito, r0) |> 
   summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
             q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975))  
-qsave(wmel_r0_2_quantile, here(output_path, paste0("quantile-out_r0-",r0, "_", mosquito, ".qs")))
+qsave(quantiles_out, here(output_path, paste0("quantile-out_r0-",r0, "_", mosquito, ".qs")))
 
 ### Strain diversity
-sim_out |>  
+strain_div_out <- sim_out |>  
   filter(name == "inf") |> 
   group_by(name, run, time, mosquito, r0) |> 
   mutate(proportion = value/sum(value)) |> 
   group_by(name, run, time, mosquito, r0) |> 
   summarise(simpson_index = 1 - sum(proportion^2), number = sum(value > 0)) 
-qsave(wmel_r0_2_quantile, here(output_path, paste0("strain-div-out_r0-",r0, "_", mosquito, ".qs")))
+qsave(strain_div_out, here(output_path, paste0("strain-div-out_r0-",r0, "_", mosquito, ".qs")))
 
-print(Sys.time() - start_time)
-print(paste0("Completed simulations for r0: ", r0, " and mosquito: ", mosquito))
+cat(Sys.time() - start_time)
+cat(paste0("Completed simulations for r0: ", r0, " and mosquito: ", mosquito))
   }
 }
 
