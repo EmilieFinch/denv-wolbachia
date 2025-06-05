@@ -2,8 +2,8 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   here, dplyr, janitor, tidyr, readxl, sf, ggplot2,
   showtext, stringr, ggplot2, patchwork, stringr, ggpubr,
-  tibble, yaml,qs, lubridate, sf, abind, geofacet, data.table, 
-  spdep, igraph, boot
+  tibble, yaml,qs, lubridate, abind, geofacet, data.table, 
+  spdep, igraph, boot, scales
 )
 
 if(!require("odin2")) install.packages(
@@ -32,3 +32,4 @@ theme_set(theme_classic() +
                   strip.text = element_text(color = "white", size = 6, family = plot_font),
                   axis.line = element_line(color = "#082544"),
                   axis.ticks = element_line(color = "#082544")))
+
