@@ -15,6 +15,20 @@ dissemination_rates <- yale_results |>
   mutate(dissemination_norm = dissemination_raw/dissemination_wt) |> 
   filter(mosquito_strain != "WT")
 
+wmel_out <- dissemination_rates |> 
+  filter(!is.na(dissemination_norm)) |> 
+  filter(mosquito_strain == "wMel") |> 
+  select(virus, serotype, dissemination_norm) |> 
+  arrange(serotype) 
+qsave(wmel_out, here("data", "wmel-inhib.qs"))
+
+walbb_out <- dissemination_rates |> 
+  filter(!is.na(dissemination_norm)) |> 
+  filter(mosquito_strain == "wAlbB") |> 
+  select(virus, serotype, dissemination_norm) |> 
+  arrange(serotype) 
+qsave(walbb_out, here("data", "walbb-inhib.qs"))
+
 # Stratified nonparametric boostrapping (with replacement)
 
 percent_diff <- function(data, indices) {
