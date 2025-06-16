@@ -13,12 +13,14 @@ simulation_years <- 75
 c_args = commandArgs(trailingOnly = TRUE)
 
 r0 <-as.numeric(c_args[[1]])
-inhibs <- seq(0.9,0, by = -0.1)
+inhibs <- seq(1,0, by = -0.1)
 
 # load model
 denv_mod <- odin2::odin(here("code/denv-serotype-model.R"), debug = TRUE, skip_cache = TRUE)
 
 for(inhib_level in inhib_levels){ 
+
+quantiles_save <- data.frame()
 for(serotype_varying in 1:4){
   # Prepare model inputs
   brazil_demog <- load_demography()
@@ -67,7 +69,16 @@ for(serotype_varying in 1:4){
     extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) |>
     mutate(inhib_level = inhib_level, r0 = r0, serotype_varying = serotype_varying)
   
-  qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_inhib-level-", inhib_level,"_serotype-varying-", serotype_varying, ".qs")))
+  #qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_inhib-level-", inhib_level,"_serotype-varying-", serotype_varying, ".qs")))
+  
+  ### Quantiles
+  quantiles_out <- sim_out |>
+    group_by(state, name, level, r0, inhib_level, serotype_varying) |>
+    summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
+              q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975)) |> 
+    mutate(year =  floor((time+1)/365) + 2025) |>
+    left_join(brazil_demog |> group_by(year) |> summarise(population = sum(population))) 
+  quantiles_save <- rbind(quantiles_save, quantiles_out)
   
   ### Time to emergence
   time_to_emergence <- sim_out |>
@@ -86,7 +97,8 @@ for(serotype_varying in 1:4){
                                    T ~ F),
            reemergence = if_else(row_number() == which(reemergence)[1], 1L, 0L),
            time_to_extinction = time[extinction == 1],
-           time_to_reemergence = time[reemergence == 1])
+           time_to_reemergence = time[reemergence == 1]) |> 
+    ungroup()
   
   emergence_out <- time_to_emergence |>
     mutate(date = as.Date("2025-01-01") + time - 1) |>
@@ -100,28 +112,10 @@ for(serotype_varying in 1:4){
     write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, ".csv")))
   }
   
-  
-  ### Infection plot
-  infection_plot <- sim_out |>
-    filter(name == "inf") |>
-    mutate(date = as.Date("2025-01-01") + time - 1) |>
-    group_by(name, level, time, date, inhib_level, r0) |>
-    summarise(median = median(value), q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975),
-              q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75)) |>
-    ungroup() |>
-    ggplot() +
-    geom_line(aes(x = date, y = median, col = as.factor(level), group = as.factor(level))) +
-    geom_ribbon(aes(x = date, ymin = q_0.25, ymax = q_0.75, fill = as.factor(level), group = as.factor(level)), alpha = 0.4) +
-    geom_ribbon(aes(x = date, ymin = q_0.025, ymax = q_0.975, fill = as.factor(level), group = as.factor(level)), alpha = 0.2) +
-    labs(y = "Infections", x = "Date", col = "Serotype", fill = "Serotype") +
-    scale_color_manual(values = c("#E07529FF", "#FAAE32FF", "#7F7991FF", "#5D4F36FF", "#B39085FF")) +
-    scale_fill_manual(values = c("#E07529FF", "#FAAE32FF", "#7F7991FF", "#5D4F36FF", "#B39085FF"))
-  
-  ggsave(here(figure_path, paste0("infection-plot_r0-", r0, "_inhib-level-", inhib_level, "_serotype-varying-", serotype_varying, ".png")),
-         width = 180, height = 150, unit = "mm", dpi = 300, plot = infection_plot)
-  
   cat(Sys.time() - start_time)
   cat(paste0("Completed simulations for r0: ", r0, " and inhib level: ", inhib_level, " with serotype varying: ", serotype_varying, "\n"))
   rm(sim_raw, sim_out, quantiles_out, time_to_emergence, emergence_out, infection_plot, denv_sys)
 }
+qsave(quantile_save,here(output_path, paste0("quantiles-out_r0-",r0, "_inhib-level-", inhib_level,".qs")))
+
 }

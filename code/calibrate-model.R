@@ -1,22 +1,22 @@
 # Script to calibrate strain model
 ## Calibrating from 1974 until 2024 using dynamic demography for Brazil
 
-source(here("R", "utils.R"))
+source(here("code", "utils.R"))
 
 ## Set paths
-output_path <- here("output", "calibration", Sys.Date())
-figure_path <- here("figures", "calibration", Sys.Date())
+output_path <- here("output", "strain-calibration", Sys.Date())
+figure_path <- here("figures", "strain-calibration", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
 # Prepare model inputs
-r0s <- c(4,2,1.5)
+r0s <- 2#seq(0.5,5, by = 0.5)
 
 for(r0 in r0s){ 
 cat(paste0("Running calibration for r0: ", r0, "\n"))
   
 n_particles <- 1
-calibration_years <- 50
+calibration_years <- 100
 brazil_demog <- load_demography()
 demog <- wrangle_demography(brazil_demog, year_start = 1974, year_end = 2024, pad_left = max(calibration_years - 51, 0))
 
@@ -36,7 +36,7 @@ denv_sys <- dust_system_create(denv_mod,
                                       amp_seas = 0.2,
                                       phase_seas = 1.56,
                                       wol_on = 0,
-                                      wol_inhib = rep(1,80)),
+                                      wol_inhib = rep(1,20)),
                           n_particles = n_particles)
 
 dust_system_set_state_initial(denv_sys) # use initial conditions defined in code

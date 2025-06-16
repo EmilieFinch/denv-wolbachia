@@ -2,10 +2,8 @@
 library(here)
 source(here("code", "00_load-packages.R"))
 source(here("code", "utils.R"))
-output_path <- here("output", "strain-simulation", Sys.Date())
+output_path <- here("output", "simulation", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
-figure_path <- here("figures", "strain-simulation", Sys.Date())
-ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
 # config
 c_args = commandArgs(trailingOnly = TRUE)
@@ -69,22 +67,25 @@ for(draw in 1:20){
     rename(state = Var1, run = Var2, time = Var3, value = Freq) |>
     mutate(run = as.numeric(run), time = as.numeric(time)) |>
     extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) |>
-    mutate(draw = draw)
+    mutate(draw = draw, mosquito = mosquito)
   
   #qsave(sim_out,here(output_path, paste0("strain-simulation-out.qs")))
   
   ### Quantiles
   quantiles_out <- sim_out |>
-    group_by(state, name, level, time,draw) |>
+    group_by(state, name, level, time,draw, mosquito) |>
     summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
-              q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975))
-  qsave(quantiles_out, here(output_path, paste0("strain-quantile-out_", draw,".qs")))
+              q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975)) |> 
+    mutate(year =  floor((time+1)/365) + 2025) |>
+    left_join(brazil_demog |> group_by(year) |> summarise(population = sum(population))) 
+    
+  qsave(quantiles_out, here(output_path, paste0("strain-quantile-out_", mosquito, "_", draw,".qs")))
   
   # Aim: data frame with the proportion of each of the strains in each run
   # Then plot these with colours for serotypes and total n for time periods: pre-release (calibration state), after 5 years, 20 years, 50 years 75 years
   
-  plot_times <- c(1, 365*5, 365*20, 365*50, 365*75) # in days
-  
+  plot_times <- round(seq(1:150)*182.5)
+    
   inf_proportions <- sim_out |>
     filter(name == "inf") |>
     filter(time %in% plot_times) |>
@@ -97,13 +98,13 @@ for(draw in 1:20){
                                 as.numeric(level) <= 10 ~ 2,
                                 as.numeric(level) <= 15 ~ 3,
                                 T ~ 4)) |>
-    mutate(draw = draw)
+    mutate(draw = draw, mosquito = mosquito)
   
   
-  if (file.exists(here(output_path, "strain-proportions.csv"))) {
-    write_csv(inf_proportions, here(output_path, paste0("strain-proportions.csv")),append = TRUE)
+  if (file.exists(here(output_path, "strain-out_", mosquito, ".csv"))) {
+    write_csv(inf_proportions, here(output_path, paste0("strain-out_", mosquito, ".csv")),append = TRUE)
   } else {
-    write_csv(inf_proportions, here(output_path, paste0("strain-proportions.csv")))
+    write_csv(inf_proportions, here(output_path, paste0("strain-out_", mosquito, ".csv")))
   }
   
   
