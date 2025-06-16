@@ -13,15 +13,14 @@ simulation_years <- 75
 c_args = commandArgs(trailingOnly = TRUE)
 
 r0 <-as.numeric(c_args[[1]])
-inhibs <- seq(1,0, by = -0.1)
+inhib_level <- as.numeric(c_args[[2]])
+quantiles_save <- data.frame()
 
 # load model
 denv_mod <- odin2::odin(here("code/denv-serotype-model.R"), debug = TRUE, skip_cache = TRUE)
 
-for(inhib_level in inhib_levels){ 
+for(serotype_varying in 1:4){ 
 
-quantiles_save <- data.frame()
-for(serotype_varying in 1:4){
   # Prepare model inputs
   brazil_demog <- load_demography()
   demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2100, pad_left = 0)
@@ -106,16 +105,16 @@ for(serotype_varying in 1:4){
     unique() |>
     arrange(run)
   
-  if (file.exists(here(output_path, paste0("time-to-emergence_r0-",r0, ".csv")))) {
-    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, ".csv")),append = TRUE)
+  if (file.exists(here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")))) {
+    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")),append = TRUE)
   } else {
-    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, ".csv")))
+    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")))
   }
   
   cat(Sys.time() - start_time)
   cat(paste0("Completed simulations for r0: ", r0, " and inhib level: ", inhib_level, " with serotype varying: ", serotype_varying, "\n"))
   rm(sim_raw, sim_out, quantiles_out, time_to_emergence, emergence_out, infection_plot, denv_sys)
-}
-qsave(quantile_save,here(output_path, paste0("quantiles-out_r0-",r0, "_inhib-level-", inhib_level,".qs")))
-
+  
+  qsave(quantile_save,here(output_path, paste0("quantiles-out_r0-",r0, "_inhib-level-", inhib_level,".qs")))
+  
 }
