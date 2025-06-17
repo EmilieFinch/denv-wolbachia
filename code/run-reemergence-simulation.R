@@ -52,7 +52,7 @@ for(serotype_varying in 1:4){
   idx <- c("prior_infection" = dust_unpack_index(denv_sys)$prior_infection, "prior_denv1" = dust_unpack_index(denv_sys)$prior_denv1,
            "prior_denv2" = dust_unpack_index(denv_sys)$prior_denv2, "prior_denv3" = dust_unpack_index(denv_sys)$prior_denv3, "prior_denv4" = dust_unpack_index(denv_sys)$prior_denv4,
            "inf" = dust_unpack_index(denv_sys)$inf) # set indices to return
-  dust_system_set_state(denv_sys, as.vector(initial_states)) # use initial conditions defined in code
+  dust_system_set_state(denv_sys, initial_states) # use initial conditions defined in code
   t <- seq(1, 365*simulation_years, by = 1)
   
   cat(paste0("Running simulations for r0: ", r0, " and inhibition level: ", inhib_level, " and serotype: ", serotype_varying, "\n"))
