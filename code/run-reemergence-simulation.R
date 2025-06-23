@@ -72,7 +72,7 @@ for(serotype_varying in 1:4){
   
   ### Quantiles
   quantiles_out <- sim_out |>
-    group_by(state, name, level, r0, inhib_level, serotype_varying) |>
+    group_by(state, time, name, level, r0, inhib_level, serotype_varying) |>
     summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
               q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975)) |> 
     mutate(year =  floor((time+1)/365) + 2025) |>
