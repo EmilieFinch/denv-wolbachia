@@ -19,11 +19,12 @@ denv_mod <- odin2::odin(here("code/denv-strain-model.R"), debug = TRUE, skip_cac
 # Prepare model inputs
 brazil_demog <- load_demography()
 demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2100, pad_left = 0)
-initial_states <- qread(here("output", "strain-calibration", "2025-06-10", paste0("calibration-states_r0-", r0, ".qs")))
+initial_states <- qread(here("output", "calibration", "2025-06-18", paste0("strain_calibration-states_r0-", r0, ".qs")))
 
 inhib_table <- qread(here("data", paste0(mosquito, "-inhib.qs")))
 
 for(draw in 1:20){
+  
   inhib_selected <- inhib_table |>
     group_by(serotype) |>
     sample_n(size = 5, replace = FALSE)
@@ -53,7 +54,7 @@ for(draw in 1:20){
   idx <- c("prior_infection" = dust_unpack_index(denv_sys)$prior_infection, "prior_denv1" = dust_unpack_index(denv_sys)$prior_denv1,
            "prior_denv2" = dust_unpack_index(denv_sys)$prior_denv2, "prior_denv3" = dust_unpack_index(denv_sys)$prior_denv3, "prior_denv4" = dust_unpack_index(denv_sys)$prior_denv4,
            "inf" = dust_unpack_index(denv_sys)$inf) # set indices to return
-  dust_system_set_state(denv_sys, as.vector(initial_states)) # use initial conditions defined in code
+  dust_system_set_state(denv_sys, initial_states) # use initial conditions defined in code
   t <- seq(1, 365*simulation_years, by = 1)
   
   cat(paste0("Running strain simulations"))
@@ -73,7 +74,7 @@ for(draw in 1:20){
   
   ### Quantiles
   quantiles_out <- sim_out |>
-    group_by(state, name, level, time,draw, mosquito) |>
+    group_by(state, name, level, time, draw, mosquito) |>
     summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
               q_0.025 = quantile(value, 0.025), q_0.975 = quantile(value, 0.975)) |> 
     mutate(year =  floor((time+1)/365) + 2025) |>
@@ -84,7 +85,8 @@ for(draw in 1:20){
   # Aim: data frame with the proportion of each of the strains in each run
   # Then plot these with colours for serotypes and total n for time periods: pre-release (calibration state), after 5 years, 20 years, 50 years 75 years
   
-  plot_times <- round(seq(1:150)*182.5)
+  plot_times <-c(1, as.vector(outer(c(182, 365), 0:74 * 365, "+")))
+
     
   inf_proportions <- sim_out |>
     filter(name == "inf") |>
