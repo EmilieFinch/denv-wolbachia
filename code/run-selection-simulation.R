@@ -6,6 +6,7 @@ output_path <- here("output", "simulation", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 
 # config
+set.seed(27)
 c_args = commandArgs(trailingOnly = TRUE)
 
 r0 <-as.numeric(c_args[[1]])
@@ -48,6 +49,7 @@ for(draw in 1:20){
                                              phase_seas = 1.56,
                                              wol_on = 1,
                                              wol_inhib = inhib_values),
+                                 seed = 27,
                                  n_particles = n_particles,
                                  n_threads = 10)
   
