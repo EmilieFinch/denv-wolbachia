@@ -8,24 +8,26 @@ figure_path <- here("figures", "simulation", Sys.Date())
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
 # config
+set.seed(27)
 n_particles <- 50
 simulation_years <- 75
 c_args = commandArgs(trailingOnly = TRUE)
 
-r0 <-as.numeric(c_args[[1]])
-inhib_level <- as.numeric(c_args[[2]])
+r0s <- seq(1,5, by = 0.5)
+inhib_level <- as.numeric(c_args[[1]])
 quantiles_save <- data.frame()
 
 # load model
 denv_mod <- odin2::odin(here("code/denv-serotype-model.R"), debug = TRUE, skip_cache = TRUE)
 
+for(r0 in r0s){ 
 for(serotype_varying in 1:4){ 
 
   # Prepare model inputs
   brazil_demog <- load_demography()
   demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2100, pad_left = 0)
   
-  initial_states <- qread(here("output", "calibration", "2025-06-06", paste0("calibration-states_r0-", r0, ".qs")))
+  initial_states <- qread(here("output", "calibration", "2025-06-16", paste0("calibration-states_r0-", r0, ".qs")))
   
   wol_inhib <- rep(0,4)
   wol_inhib[serotype_varying] <- inhib_level
@@ -46,6 +48,7 @@ for(serotype_varying in 1:4){
                                              phase_seas = 1.56,
                                              wol_on = 1,
                                              wol_inhib = wol_inhib),
+                                 seed = 27,
                                  n_particles = n_particles,
                                  n_threads = 10)
   
@@ -66,7 +69,10 @@ for(serotype_varying in 1:4){
     rename(state = Var1, run = Var2, time = Var3, value = Freq) |>
     mutate(run = as.numeric(run), time = as.numeric(time)) |>
     extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) |>
-    mutate(inhib_level = inhib_level, r0 = r0, serotype_varying = serotype_varying)
+    mutate(inhib_level = inhib_level, r0 = r0, serotype_varying = serotype_varying) |> 
+    mutate(year =  floor((time+1)/365) + 2025) |>
+    left_join(brazil_demog |> group_by(year) |> summarise(population = sum(population))) |> 
+    mutate(inc = value/population*100000)
   
   #qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_inhib-level-", inhib_level,"_serotype-varying-", serotype_varying, ".qs")))
   
@@ -89,11 +95,19 @@ for(serotype_varying in 1:4){
     mutate(inc = (value/population)*100000) |>
     group_by(run) |>
     mutate(flag = inc > 1,
-           extinction = case_when(flag == FALSE & flag != lag(flag)  ~ T,
+           extinction = case_when(flag[1] == TRUE & flag == FALSE & flag != lag(flag)  ~ T,
                                   T ~ F),
            extinction = if_else(row_number() == which(extinction)[1], 1L, 0L),
-           reemergence = case_when(flag == TRUE & flag != lag(flag) ~ T,
-                                   T ~ F),
+           reemergence = case_when(
+             flag == TRUE & 
+               flag != lag(flag) & 
+               flag == lead(flag, 1) & 
+               flag == lead(flag, 2) & 
+               flag == lead(flag, 3) & 
+               flag == lead(flag, 4) & 
+               flag == lead(flag, 5) & 
+               flag == lead(flag, 6) ~ TRUE, # add criteria that incidence must be > 1 for at least a week for reemergence
+             TRUE ~ FALSE),
            reemergence = if_else(row_number() == which(reemergence)[1], 1L, 0L),
            time_to_extinction = time[extinction == 1],
            time_to_reemergence = time[reemergence == 1]) |> 
@@ -105,16 +119,16 @@ for(serotype_varying in 1:4){
     unique() |>
     arrange(run)
   
-  if (file.exists(here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")))) {
-    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")),append = TRUE)
+  if (file.exists(here(output_path, paste0("time-to-emergence_inhib-", inhib_level, ".csv")))) {
+    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_inhib-", inhib_level, ".csv")),append = TRUE)
   } else {
-    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_r0-",r0, "_inhib-", inhib_level, ".csv")))
+    write_csv(emergence_out, here(output_path, paste0("time-to-emergence_inhib-", inhib_level, ".csv")))
   }
   
   cat(Sys.time() - start_time)
   cat(paste0("Completed simulations for r0: ", r0, " and inhib level: ", inhib_level, " with serotype varying: ", serotype_varying, "\n"))
-  rm(sim_raw, sim_out, quantiles_out, time_to_emergence, emergence_out, infection_plot, denv_sys)
+  rm(sim_raw, sim_out, quantiles_out, time_to_emergence, emergence_out, denv_sys)
   
-  qsave(quantile_save,here(output_path, paste0("quantiles-out_r0-",r0, "_inhib-level-", inhib_level,".qs")))
+  qsave(quantiles_save,here(output_path, paste0("quantiles-out_inhib-level-", inhib_level,".qs")))
   
-}
+}}
