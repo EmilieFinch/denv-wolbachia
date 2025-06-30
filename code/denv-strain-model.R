@@ -89,7 +89,7 @@ lambda_total <- sum(lambda[])
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
 
-print("sim_year: {sim_year}, r0_out[12]: {r0_out[12]}, lambda[12]: {lambda[12]}, lambda_total: {lambda_total}, I_example: {I[12,7,20]}")
+#print("sim_year: {sim_year}, r0_out[12]: {r0_out[12]}, lambda[12]: {lambda[12]}, lambda_total: {lambda_total}, I_example: {I[12,7,20]}")
 
 #### Draw number moving between compartments ####
 ## Note chain binomials for n_SI and n_RI at the end of the script 
