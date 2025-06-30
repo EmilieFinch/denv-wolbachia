@@ -27,7 +27,7 @@ theme_set(theme_classic() +
                   axis.text = element_text(size = 7, family = plot_font),
                   legend.title = element_text(size = 8, family = plot_font), 
                   legend.text = element_text(size = 7, family = plot_font),
-                  legend.key.height = unit(0.2, "cm"), legend.position = "bottom",
+                  legend.key.height = unit(0.5, "cm"), legend.position = "bottom",
                   strip.background = element_rect(fill = "#082544"), 
                   strip.text = element_text(color = "white", size = 6, family = plot_font),
                   axis.line = element_line(color = "#082544"),
