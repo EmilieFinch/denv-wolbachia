@@ -4,7 +4,7 @@ source(here("code", "utils.R"))
 
 ### Set up ###
 
-date <- "2025-06-19"
+date <- "2025-06-25"
 
 figure_path <- here("figures")
 output_path <- here("output", "simulation", date)
@@ -101,47 +101,54 @@ strain_plot <- strain_out |>
             q_0.975_transmissibility = quantile(abundance_weighted_dissem, 0.975)) |>
   ungroup() 
 
-example_dynamics <- qread(here("output", "simulation", date, "quantiles-out_r0-2_inhib-level-0.45.qs"))
+example_dynamics <- qread(here("output", "simulation", date, "quantiles-out_inhib-level-0.75.qs"))
 
 ### Plotting ###
 
 ## Panel A - time to reemergence for different R0 and inhibition combinations
 
 ## Probability reemergence column
-
-    probability_reemergence <- reemergence_strains |> 
+    
+reemergence_counts <- reemergence_strains |> 
+  group_by(serotype_varying, mosquito, r0, p_40) |> 
+  summarise(count = n())
+    
+probability_reemergence <- reemergence_strains |> 
     group_by(serotype_varying, mosquito,  r0) |> 
     summarise(
-      mean = mean(p_20), 
-      median = median(p_20),
-      q_0.25 = quantile(p_20, 0.25), 
-      q_0.75 = quantile(p_20, 0.75),
-      q_0.025 = quantile(p_20, 0.025), 
-      q_0.975 = quantile(p_20, 0.975),
+      mean = mean(p_40), 
+      median = median(p_40),
+      q_0.25 = quantile(p_40, 0.25), 
+      q_0.75 = quantile(p_40, 0.75),
+      q_0.025 = quantile(p_40, 0.025), 
+      q_0.975 = quantile(p_40, 0.975),
       .groups = "drop")  |> 
     ggplot(aes(x = mosquito, y = median, group = mosquito)) +
     geom_rect(aes(xmin = as.numeric(factor(mosquito)) - 0.3,
                   xmax = as.numeric(factor(mosquito)) + 0.3,
                   ymin = q_0.25, ymax = q_0.75, fill = mosquito),
               alpha = 0.5) +
+    geom_point(data = reemergence_counts, aes(x = mosquito, y = p_40, color = mosquito, size = count), shape = 20, alpha = 0.9) +
     geom_segment(aes(x = as.numeric(factor(mosquito)) - 0.3,
                      xend = as.numeric(factor(mosquito)) + 0.3,
                      y = median, yend = median),
                  color = "black", linewidth = 0.5) +
-    geom_point(data = reemergence_strains, aes(x = mosquito, y = p_20, color = mosquito), size = 1, shape = 20) +
     facet_grid(r0 ~ serotype_varying, scales = "free_y") +
     coord_flip() +
-    labs(y = "Probability of\nreemergence ≤ 20 years", x = NULL, fill = "Mosquito strain") +
+    labs(y = "Probability of\nreemergence ≤ 40 years", x = NULL, fill = "Mosquito strain", size = "Number of\nDENV strains") +
     scale_fill_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
     scale_color_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
+    scale_size_continuous(range = c(0.5,2.2)) +
     scale_y_continuous(breaks = c(0,0.5,1),labels = c("0", "0.5", "1")) +
     theme(
       axis.text.y = element_blank(),
       axis.ticks.y = element_blank(),
       axis.line.y.left = element_blank()) +
-    theme(plot.margin = margin(10, 10, 20, 0), legend.position = "none")
+    guides(size = guide_legend(title.position = "left", title.hjust = 1, title.vjust = 0.8), color = "none", fill = "none") +
+    theme(plot.margin = margin(15, 10, 20, 5),
+          legend.justification = "right") 
   
-    ggsave(here(figure_path, "panel_c_probability-reemergence_20-years.png"), plot = probability_reemergence, width = 180, height = 120, unit = "mm", dpi = 300)
+    ggsave(here(figure_path, "panel_c_probability-reemergence_40-years.png"), plot = probability_reemergence, width = 180, height = 120, unit = "mm", dpi = 300)
     
 panel_a <- inhib_table |> 
   mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMel"))) |> 
@@ -168,7 +175,7 @@ reemergence_plot <- reemergence_quantile |>
   mutate(median = case_when(is.na(median) ~ 75, T~ median)) |> 
   ggplot() +
   geom_tile(aes(x = inhib_level, y = r0, fill = median)) +
-  labs(x = "Relative transmissibility\n", y = "R0", fill = "Time to\nreemergence\n(years)") +
+  labs(x = "Relative dissemination\n", y = "R0", fill = "Time to\nreemergence\n(years)") +
   scale_fill_gradient(low = "#3A5F44",
                       high = "#fff7fb",
                       na.value = "#969696", breaks = c(0, 15, 30, 45, 60, 75), 
@@ -176,7 +183,7 @@ reemergence_plot <- reemergence_quantile |>
   scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.02), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
 scale_y_continuous(expand = c(0,0)) +
   guides(fill = guide_colorbar(title.position = "left", title.hjust = 1, title.vjust = 0.8)) +
-  theme(plot.margin = margin(25, 5, 20, 17.5), 
+  theme(plot.margin = margin(30, 5, 20, 17.5), 
         legend.justification = "left",
         legend.spacing.x = unit(-0.3, "cm"),
         legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
@@ -184,6 +191,7 @@ scale_y_continuous(expand = c(0,0)) +
         legend.title = element_text(size = 8, family = plot_font))
 
 legend <- ggpubr::get_legend(reemergence_plot)
+legend_prob <- ggpubr::get_legend(probability_reemergence)
 ggsave(here(figure_path, "panel-c_reemergence-tile.png"), plot = reemergence_plot, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
 
 ## Panel C - selection over time
@@ -210,7 +218,7 @@ panel_labels <- strain_out |>
   geom_ribbon(aes(x = date, ymin = q_0.025_transmissibility, ymax = q_0.975_transmissibility, fill = mosquito, group = mosquito), alpha = 0.2) +
     scale_fill_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
     scale_color_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
-  scale_y_continuous(name = "Relative transmissibility\n of circulating strains") +
+  scale_y_continuous(name = "Relative dissemination\n of circulating strains") +
   scale_x_date(labels = label_date_short(), breaks = seq(as.Date("2025-01-01"), as.Date("2100-02-01"), by = "10 years")) +
   labs(x = "Date", col = NULL, fill = NULL) + 
   theme(legend.position = "none")
@@ -218,23 +226,24 @@ panel_labels <- strain_out |>
   ggsave(here(figure_path, "panel_b.png"), plot = panel_b, width = 180, height = 120, unit = "mm", dpi = 300)
   
   top_row <- plot_grid(panel_a, panel_b, labels = c("A", "B"), rel_widths = c(2,1),label_size = 10, label_fontfamily = plot_font)
-  panel_c <- plot_grid(reemergence_plot + theme(legend.position = "none"), probability_reemergence, rel_widths = c(2,1))
-  panel_c <- plot_grid(panel_c, legend, ncol = 1, rel_heights = c(1, 0.1), labels = c("C", ""), label_size = 10, label_fontfamily = plot_font)
-  panel_b <- plot_grid(inhib_density, NULL, rel_widths = c(3,1), ncol = 2, nrow = 1, labels = c("A", ""))
+  panel_c <- plot_grid(reemergence_plot + theme(legend.position = "none"), probability_reemergence + theme(legend.position = "none"), rel_widths = c(2,1), labels = c("C", "D"), label_size = 10, label_fontfamily = plot_font)
+  legends <- plot_grid(legend, legend_prob, ncol = 2)
+  panel_c <- plot_grid(panel_c, legends, ncol = 1, rel_heights = c(1, 0.1))
 
   
   figure <- plot_grid(top_row, panel_c, nrow = 2, rel_heights = c(1,2.5), labels = c("", "C"), label_size = 10, label_fontfamily = plot_font)
-  ggsave(here(figure_path, "modelling-fig_revamp_20-years.png"), plot = figure, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
+  ggsave(here(figure_path, "modelling-fig.png"), plot = figure, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
   
 ## Panel D - example dynamics
 
 dynamics_fig <- example_dynamics |> 
-  filter(name == "inf") |> 
+  filter(name == "inf" & serotype_varying == 4 & r0 == 1) |> 
   mutate(date = time + as.Date("2025-01-01") - 1) |> 
+  filter(date <= as.Date("2034-01-01")) |> View()
   ggplot() +
-  geom_line(aes(x = date, y = median, col = as.factor(level), group = as.factor(level))) +
-  geom_ribbon(aes(x = date, ymin = q_0.025, ymax = q_0.975, fill = as.factor(level), group = as.factor(level)), alpha = 0.2) +
-  coord_cartesian(ylim = c(0,10000)) +
+  geom_line(aes(x = date, y = median/population*100000, col = as.factor(level), group = as.factor(level))) +
+  geom_ribbon(aes(x = date, ymin = q_0.025/population*100000, ymax = q_0.975/population*100000, fill = as.factor(level), group = as.factor(level)), alpha = 0.2) +
+ # coord_cartesian(ylim = c(0,10000)) +
   labs(y = "Infections", x = "Date", fill = "Strain", col = "Strain")
 
-ggsave(here(figure_path, "example-dynamics_r0-2_inhib-0.45.png"), plot = dynamics_fig, width = 180, height = 150, unit = "mm", dpi = 300)
+ggsave(here(figure_path, "example-dynamics.png"), plot = dynamics_fig, width = 180, height = 120, unit = "mm", dpi = 300)
