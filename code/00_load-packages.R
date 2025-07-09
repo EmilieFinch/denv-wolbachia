@@ -1,9 +1,9 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
-  here, dplyr, janitor, tidyr, readxl, sf, ggplot2,
-  showtext, stringr, ggplot2, patchwork, stringr, ggpubr,
-  tibble, yaml,qs, lubridate, abind, geofacet, data.table, 
-  spdep, igraph, boot, scales
+  here, dplyr, janitor, tidyr, readxl, ggplot2,
+  showtext, stringr, ggplot2, patchwork, ggpubr,
+  tibble, yaml,qs, lubridate, abind, data.table, 
+  spdep, igraph, boot, scales, purrr, readr, cowplot
 )
 
 if(!require("odin2")) install.packages(

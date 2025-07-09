@@ -2,7 +2,7 @@
 
 ## For S -> I
 
-n_strains <- 80
+n_strains <- 4
 
 for (j in 1:n_strains) {
   if (j == 1) {
@@ -64,50 +64,6 @@ cat(paste(code_lines, collapse = "\n"))
 
 ## n_RI Generate chain binomial ## 
 
-# Map serotypes to strain indices
-serotype_strains <- list(
-  `1` = 1:20,
-  `2` = 21:40,
-  `3` = 41:60,
-  `4` = 61:80
-)
-
-# Add one more level to immune histories (15 total)
-immune_histories[[15]] <- c(1, 2, 3, 4)  # 1234
-
-for (h_idx in seq_along(immune_histories)) {
-  immune <- immune_histories[[h_idx]]
-  remaining_serotypes <- setdiff(1:4, immune)
-  if (length(remaining_serotypes) == 0) next  # Fully immune
-  
-  eligible_strains <- unlist(serotype_strains[as.character(remaining_serotypes)])
-  k <- length(eligible_strains)
-  
-  for (j_idx in seq_along(eligible_strains)) {
-    j <- eligible_strains[j_idx]
-    lambda_range <- sprintf("lambda[%d:%d]", eligible_strains[j_idx], eligible_strains[k])
-    
-    if (j_idx == 1) {
-      cat(sprintf(
-        "n_RI[, %d, %d] <- if (sum(%s) > 0) Binomial(R_out[i, %d], lambda[%d] / sum(%s)) else 0\n",
-        h_idx, j, lambda_range, h_idx, j, lambda_range
-      ))
-    } else if (j_idx < k) {
-      cat(sprintf(
-        "n_RI[, %d, %d] <- if (sum(%s) > 0) Binomial(R_out[i, %d] - sum(n_RI[i, %d, %d:%d]), lambda[%d] / sum(%s)) else 0\n",
-        h_idx, j, lambda_range, h_idx, h_idx, eligible_strains[1], eligible_strains[j_idx - 1], j, lambda_range
-      ))
-    } else {
-      cat(sprintf(
-        "n_RI[, %d, %d] <- R_out[i, %d] - sum(n_RI[i, %d, %d:%d])\n",
-        h_idx, j, h_idx, h_idx, eligible_strains[1], eligible_strains[j_idx - 1]
-      ))
-    }
-  }
-}
-
-
-## New version
 # Helper: Break a vector into contiguous chunks
 contiguous_chunks <- function(x) {
   split(x, cumsum(c(1, diff(x) != 1)))
@@ -142,10 +98,10 @@ sum_n_RI_expr <- function(h_idx, indices) {
 
 # Your serotype to strain index mapping
 serotype_strains <- list(
-  `1` = 1:20,
-  `2` = 21:40,
-  `3` = 41:60,
-  `4` = 61:80
+  `1` = 1,
+  `2` = 2,
+  `3` = 3,
+  `4` = 4
 )
 
 # Your immune histories (including fully immune)
@@ -222,10 +178,10 @@ key <- function(set) paste(sort(set), collapse = "")
 C_map <- setNames(seq_along(C_histories), sapply(C_histories, key))
 
 sero_ranges <- list(
-  `1` = "1:20",
-  `2` = "21:40",
-  `3` = "41:60",
-  `4` = "61:80"
+  `1` = "1",
+  `2` = "2",
+  `3` = "3",
+  `4` = "4"
 )
 
 C_contributions <- vector("list", length(C_histories))
