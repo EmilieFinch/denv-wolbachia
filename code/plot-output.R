@@ -4,7 +4,7 @@ source(here("code", "utils.R"))
 
 ### Set up ###
 
-date <- "2025-06-25"
+date <- "2025-06-29"
 
 figure_path <- here("figures")
 output_path <- here("output", "simulation", date)
@@ -30,15 +30,15 @@ brazil_demog <- load_demography()
 ## Load in results 
 
 # Reemergence results
-files <- list.files(here("output", "simulation", date), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
-files_strain <- list.files(here("output", "simulation", date, "strain-specific"), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
+files <- list.files(here("output", "simulation", date, "grid"), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
+files_strain <- list.files(here("output", "simulation", date, "virus-specific"), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
 
 reemergence_times <- map_dfr(c(files), read_csv) |> 
   mutate(type = "grid") |> 
   mutate(diff = time_to_reemergence - time_to_extinction) 
 
 reemergence_quantile <- reemergence_times |>
-  group_by(inhib_level, r0, serotype_varying, type) |> 
+  group_by(inhib_level, r0, type) |> 
   summarise(median = median(time_to_reemergence/365, na.rm = TRUE),
             q_0.025 = quantile(time_to_reemergence/365, 0.025, na.rm = TRUE),
             q_0.975 = quantile(time_to_reemergence/365, 0.975, na.rm = TRUE))
@@ -54,7 +54,6 @@ reemergence_probs <- map_dfr(c(files_strain), read_csv) |> mutate(type = "strain
             p_40 = case_when(is.na(p_40) ~ 0, T ~ p_40))
 
 # Create data frame for each R0 and mosquito
-
 reemergence_strains <- map_dfr(seq(1,5, by = 0.5), ~ inhib_table |>  mutate(r0 = .x) |> rename(serotype_varying = serotype)) |> 
   left_join(reemergence_probs, by = c("inhib_level", "r0", "serotype_varying")) |> 
   mutate(r0 = factor(r0, levels = seq(5, 1, by = -0.5)),
@@ -67,9 +66,9 @@ reemergence_strains <- map_dfr(seq(1,5, by = 0.5), ~ inhib_table |>  mutate(r0 =
 #files <- list.files(here("output", "simulation", date), pattern = "^strain-out.*\\.csv$", full.names = TRUE)
 #strain_out <- map_dfr(files, read_csv)
 
-strain_out <- read.csv(here("output", "simulation", date, "strain-out_wmel.csv")) |> 
+strain_out <- read.csv(here("output", "simulation", date, "multi-strain", "strain-out_wmel.csv")) |> 
   mutate(mosquito = "wmel") |>
-  bind_rows(read.csv(here("output", "simulation", date, "strain-out_walbb.csv")) |> 
+  bind_rows(read.csv(here("output", "simulation", date, "multi-strain", "strain-out_walbb.csv")) |> 
               mutate(mosquito = "walbb")) |> 
   left_join(inhib_table |>  select(virus, dissemination_norm, mosquito), by = c("virus", "mosquito")) |> 
   mutate(year_sim = floor(time/365),
@@ -85,7 +84,7 @@ strain_out <- read.csv(here("output", "simulation", date, "strain-out_wmel.csv")
          abundance_weighted_dissem = sum(weight_dissemination)) |> 
   ungroup() |> 
   group_by(time, date, year_sim, mosquito) |>
-  mutate(median_circulating = median(total_circulating))
+  mutate(median_circulating = median(total_circulating)) 
 
 strain_plot <- strain_out |>
   group_by(time, date, mosquito, draw, run) |> 
@@ -107,8 +106,7 @@ example_dynamics <- qread(here("output", "simulation", date, "quantiles-out_inhi
 
 ## Panel A - time to reemergence for different R0 and inhibition combinations
 
-## Probability reemergence column
-    
+# Probability reemergence column
 reemergence_counts <- reemergence_strains |> 
   group_by(serotype_varying, mosquito, r0, p_40) |> 
   summarise(count = n())
@@ -138,7 +136,7 @@ probability_reemergence <- reemergence_strains |>
     labs(y = "Probability of\nreemergence ≤ 40 years", x = NULL, fill = "Mosquito strain", size = "Number of\nDENV strains") +
     scale_fill_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
     scale_color_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
-    scale_size_continuous(range = c(0.5,2.2)) +
+    scale_size_continuous(range = c(0.5,2.2), breaks = c(1, 5, 10), labels = c("1 ", "5 ", "10+")) +
     scale_y_continuous(breaks = c(0,0.5,1),labels = c("0", "0.5", "1")) +
     theme(
       axis.text.y = element_blank(),
@@ -146,10 +144,11 @@ probability_reemergence <- reemergence_strains |>
       axis.line.y.left = element_blank()) +
     guides(size = guide_legend(title.position = "left", title.hjust = 1, title.vjust = 0.8), color = "none", fill = "none") +
     theme(plot.margin = margin(15, 10, 20, 5),
-          legend.justification = "right") 
+          legend.justification = "left") 
   
     ggsave(here(figure_path, "panel_c_probability-reemergence_40-years.png"), plot = probability_reemergence, width = 180, height = 120, unit = "mm", dpi = 300)
-    
+  
+# Histogram of relative dissemination  
 panel_a <- inhib_table |> 
   mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMel"))) |> 
   ggplot() +
@@ -168,8 +167,7 @@ panel_a <- inhib_table |>
 
 ggsave(here(figure_path, "panel_a.png"), plot = panel_a, width = 180, height = 120, unit = "mm", dpi = 300)
 
-legend_inhib <- ggpubr::get_legend(inhib_density)
-
+# Tile plot of median reemergence times
 reemergence_plot <- reemergence_quantile |> 
   filter(r0 >= 1) |> 
   mutate(median = case_when(is.na(median) ~ 75, T~ median)) |> 
@@ -180,13 +178,13 @@ reemergence_plot <- reemergence_quantile |>
                       high = "#fff7fb",
                       na.value = "#969696", breaks = c(0, 15, 30, 45, 60, 75), 
                       labels = c("0", "15", "30", "45","60","75+")) +
-  scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.02), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
-scale_y_continuous(expand = c(0,0)) +
+  scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.04), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
+scale_y_continuous(expand = c(0,0))  +
   guides(fill = guide_colorbar(title.position = "left", title.hjust = 1, title.vjust = 0.8)) +
   theme(plot.margin = margin(30, 5, 20, 17.5), 
-        legend.justification = "left",
-        legend.spacing.x = unit(-0.3, "cm"),
-        legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
+      #  legend.justification = "left",
+       # legend.spacing.x = unit(-0.3, "cm"),
+        legend.margin = margin(t = -1, r = 0, b = 1, l = 0),
         legend.box.spacing = unit(0, "pt"),
         legend.title = element_text(size = 8, family = plot_font))
 
@@ -227,7 +225,7 @@ panel_labels <- strain_out |>
   
   top_row <- plot_grid(panel_a, panel_b, labels = c("A", "B"), rel_widths = c(2,1),label_size = 10, label_fontfamily = plot_font)
   panel_c <- plot_grid(reemergence_plot + theme(legend.position = "none"), probability_reemergence + theme(legend.position = "none"), rel_widths = c(2,1), labels = c("C", "D"), label_size = 10, label_fontfamily = plot_font)
-  legends <- plot_grid(legend, legend_prob, ncol = 2)
+  legends <- plot_grid(legend, legend_prob, ncol = 2, rel_widths = c(1,1.2))
   panel_c <- plot_grid(panel_c, legends, ncol = 1, rel_heights = c(1, 0.1))
 
   
