@@ -57,7 +57,7 @@ reemergence_probs <- map_dfr(c(files_strain), read_csv) |> mutate(type = "strain
 reemergence_strains <- map_dfr(seq(1,5, by = 0.5), ~ inhib_table |>  mutate(r0 = .x) |> rename(serotype_varying = serotype)) |> 
   left_join(reemergence_probs, by = c("inhib_level", "r0", "serotype_varying")) |> 
   mutate(r0 = factor(r0, levels = seq(5, 1, by = -0.5)),
-        mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMel")),
+        mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM")),
         serotype_varying = factor(serotype_varying, levels = c(1, 2, 3, 4), 
                                          labels = c("DENV-1", "DENV-2", "DENV-3", "DENV-4")))
 
@@ -100,9 +100,9 @@ strain_plot <- strain_out |>
             q_0.975_transmissibility = quantile(abundance_weighted_dissem, 0.975)) |>
   ungroup() 
 
-example_dynamics <- qread(here("output", "simulation", date, "quantiles-out_inhib-level-0.75.qs"))
-
 ### Plotting ###
+
+wol_labels <- c(expression(paste(italic("w"), "AlbB")), expression(paste(italic("w"), "MelM")))
 
 ## Panel A - time to reemergence for different R0 and inhibition combinations
 
@@ -134,8 +134,8 @@ probability_reemergence <- reemergence_strains |>
     facet_grid(r0 ~ serotype_varying, scales = "free_y") +
     coord_flip() +
     labs(y = "Probability of\nreemergence ≤ 40 years", x = NULL, fill = "Mosquito strain", size = "Number of\nDENV strains") +
-    scale_fill_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
-    scale_color_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
+    scale_fill_manual(values = c("#b8cc00", "#3b5323"), name = "Mosquito strain", labels = wol_labels) +
+    scale_color_manual(values = c("#b8cc00", "#3b5323"), name = "Mosquito strain", labels = wol_labels) +
     scale_size_continuous(range = c(0.5,2.2), breaks = c(1, 5, 10), labels = c("1 ", "5 ", "10+")) +
     scale_y_continuous(breaks = c(0,0.5,1),labels = c("0", "0.5", "1")) +
     theme(
@@ -150,13 +150,13 @@ probability_reemergence <- reemergence_strains |>
   
 # Histogram of relative dissemination  
 panel_a <- inhib_table |> 
-  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMel"))) |> 
+  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM"))) |> 
   ggplot() +
   geom_histogram(aes(x = dissemination_norm, fill = mosquito),position = "identity", alpha = 0.5, binwidth = 0.05) +
-  scale_fill_manual(values = c("#C5692D", "#132F5B")) +
+  scale_fill_manual(values = c("#b8cc00", "#3b5323"), labels = wol_labels) +
   scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.02), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
   theme(legend.position = "right")  +
-  labs(x = NULL, fill = "Mosquito strain", y = "Frequency") +
+  labs(x = NULL, fill = expression(paste(italic("Wolbachia"), " strain")), y = "Frequency") +
   guides(fill = guide_legend(direction = "vertical")) +
   theme(plot.margin = margin(10, 5, 10, 15),
               legend.key.width = unit(0.6, "cm"),
@@ -174,7 +174,7 @@ reemergence_plot <- reemergence_quantile |>
   ggplot() +
   geom_tile(aes(x = inhib_level, y = r0, fill = median)) +
   labs(x = "Relative dissemination\n", y = "R0", fill = "Time to\nreemergence\n(years)") +
-  scale_fill_gradient(low = "#3A5F44",
+  scale_fill_gradient(low = "#132F5B",
                       high = "#fff7fb",
                       na.value = "#969696", breaks = c(0, 15, 30, 45, 60, 75), 
                       labels = c("0", "15", "30", "45","60","75+")) +
@@ -208,40 +208,39 @@ panel_labels <- strain_out |>
 
 # Panel B
 
-  panel_b <- strain_plot |> 
-  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMel"))) |> 
+panel_b <- strain_plot |> 
+  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM"))) |> 
   filter(time %% 365 != 0 ) |> 
   ggplot() +
   geom_line(aes(x = date, y = median_transmissibility, col = mosquito, group = mosquito), lty = "dashed") +
   geom_ribbon(aes(x = date, ymin = q_0.025_transmissibility, ymax = q_0.975_transmissibility, fill = mosquito, group = mosquito), alpha = 0.2) +
-    scale_fill_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
-    scale_color_manual(values = c("#C5692D", "#132F5B"), name = "Mosquito strain") +
-  scale_y_continuous(name = "Relative dissemination\n of circulating strains") +
-  scale_x_date(labels = label_date_short(), breaks = seq(as.Date("2025-01-01"), as.Date("2100-02-01"), by = "10 years")) +
+    scale_fill_manual(values = c("#b8cc00", "#3b5323"), name = expression(paste(italic("Wolbachia"), " strain")), labels = wol_labels) +
+    scale_color_manual(values = c("#b8cc00", "#3b5323"), name = expression(paste(italic("Wolbachia"), " strain")), labels = wol_labels) +
+  scale_y_continuous(name="Average relative\ndissemination", breaks=seq(0,1, by=0.2)) +
+  scale_x_date(labels=label_date_short(), breaks = seq(as.Date("2025-01-01"), as.Date("2100-02-01"), by = "10 years"), limits = c(as.Date("2023-01-01"), as.Date("2100-02-01"))) +
+  annotate("text", x = as.Date("2024-01-02"), y = 0.9, label = "n=19", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2024-01-02"), y = 1, label = "n=19", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2030-07-01"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2030-07-01"), y = 1, label = "n=1", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+ # annotate("text", x = as.Date("2035-06-30"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2, family = plot_font) +
+ # annotate("text", x = as.Date("2035-06-30"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2, family = plot_font) +
+  annotate("text", x = as.Date("2045-06-27"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2045-06-27"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2075-06-20"), y = 0.9, label = "n=2", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2075-06-20"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2099-06-14"), y = 0.9, label = "n=2", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2099-06-14"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
   labs(x = "Date", col = NULL, fill = NULL) + 
-  theme(legend.position = "none")
+  theme(legend.position = "none") 
+
   
-  ggsave(here(figure_path, "panel_b.png"), plot = panel_b, width = 180, height = 120, unit = "mm", dpi = 300)
-  
-  top_row <- plot_grid(panel_a, panel_b, labels = c("A", "B"), rel_widths = c(2,1),label_size = 10, label_fontfamily = plot_font)
-  panel_c <- plot_grid(reemergence_plot + theme(legend.position = "none"), probability_reemergence + theme(legend.position = "none"), rel_widths = c(2,1), labels = c("C", "D"), label_size = 10, label_fontfamily = plot_font)
+  top_row <- plot_grid(panel_a, panel_b, labels = c("a", "b"), rel_widths = c(1.8,1),label_size = 10, label_fontfamily = plot_font)
+  panel_c <- plot_grid(reemergence_plot + theme(legend.position = "none"), probability_reemergence + theme(legend.position = "none"), rel_widths = c(1.8,1), labels = c("c", "d"), label_size = 10, label_fontfamily = plot_font)
   legends <- plot_grid(legend, legend_prob, ncol = 2, rel_widths = c(1,1.2))
   panel_c <- plot_grid(panel_c, legends, ncol = 1, rel_heights = c(1, 0.1))
 
   
-  figure <- plot_grid(top_row, panel_c, nrow = 2, rel_heights = c(1,2.5), labels = c("", "C"), label_size = 10, label_fontfamily = plot_font)
+  figure <- plot_grid(top_row, panel_c, nrow = 2, rel_heights = c(1,2.5), labels = c("", "c"), label_size = 10, label_fontfamily = plot_font)
   ggsave(here(figure_path, "modelling-fig.png"), plot = figure, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
   
-## Panel D - example dynamics
-
-dynamics_fig <- example_dynamics |> 
-  filter(name == "inf" & serotype_varying == 4 & r0 == 1) |> 
-  mutate(date = time + as.Date("2025-01-01") - 1) |> 
-  filter(date <= as.Date("2034-01-01")) |> View()
-  ggplot() +
-  geom_line(aes(x = date, y = median/population*100000, col = as.factor(level), group = as.factor(level))) +
-  geom_ribbon(aes(x = date, ymin = q_0.025/population*100000, ymax = q_0.975/population*100000, fill = as.factor(level), group = as.factor(level)), alpha = 0.2) +
- # coord_cartesian(ylim = c(0,10000)) +
-  labs(y = "Infections", x = "Date", fill = "Strain", col = "Strain")
-
-ggsave(here(figure_path, "example-dynamics.png"), plot = dynamics_fig, width = 180, height = 120, unit = "mm", dpi = 300)
+  

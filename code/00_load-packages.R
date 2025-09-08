@@ -15,8 +15,7 @@ if(!require("dust2")) install.packages(
   repos = c("https://mrc-ide.r-universe.dev", "https://cloud.r-project.org"))
 
 # Set up plot font
-plot_font <- "Open Sans"
-font_add_google(plot_font)
+plot_font <- "Arial"
 showtext_opts(dpi = 300)
 showtext_auto()
 
