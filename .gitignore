@@ -39,8 +39,6 @@ vignettes/*.pdf
 **/.DS_Store
 
 # Specific folders and files for project
-output
-data
 figures
 presentations
 papers
