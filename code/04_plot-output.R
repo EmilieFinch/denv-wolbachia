@@ -1,16 +1,18 @@
-# Plot simulation output
+# Code to plot simulation output
 
+library(here)
+source(here("code", "00_load-packages.R"))
 source(here("code", "utils.R"))
 
-### Set up ###
+## Set up 
 
-date <- "2025-06-29"
+date <- "2025-09-10"
 
 figure_path <- here("figures")
 output_path <- here("output", "simulation", date)
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
-## Load in inhib values
+### Load in inhib values
 
 inhib_table <- qread(here("data", "wmel-inhib.qs")) |>
   mutate(mosquito = "wmel") |> 
@@ -29,7 +31,7 @@ brazil_demog <- load_demography()
 
 ## Load in results 
 
-# Reemergence results
+### Reemergence results
 files <- list.files(here("output", "simulation", date, "grid"), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
 files_strain <- list.files(here("output", "simulation", date, "virus-specific"), pattern = "^time-to-emergence.*\\.csv$", full.names = TRUE)
 
@@ -53,7 +55,6 @@ reemergence_probs <- map_dfr(c(files_strain), read_csv) |> mutate(type = "strain
             p_20 = case_when(is.na(p_20) ~ 0, T ~ p_20),
             p_40 = case_when(is.na(p_40) ~ 0, T ~ p_40))
 
-# Create data frame for each R0 and mosquito
 reemergence_strains <- map_dfr(seq(1,5, by = 0.5), ~ inhib_table |>  mutate(r0 = .x) |> rename(serotype_varying = serotype)) |> 
   left_join(reemergence_probs, by = c("inhib_level", "r0", "serotype_varying")) |> 
   mutate(r0 = factor(r0, levels = seq(5, 1, by = -0.5)),
@@ -61,10 +62,7 @@ reemergence_strains <- map_dfr(seq(1,5, by = 0.5), ~ inhib_table |>  mutate(r0 =
         serotype_varying = factor(serotype_varying, levels = c(1, 2, 3, 4), 
                                          labels = c("DENV-1", "DENV-2", "DENV-3", "DENV-4")))
 
-# Strain selection results
-
-#files <- list.files(here("output", "simulation", date), pattern = "^strain-out.*\\.csv$", full.names = TRUE)
-#strain_out <- map_dfr(files, read_csv)
+### Strain selection results
 
 strain_out <- read.csv(here("output", "simulation", date, "multi-strain", "strain-out_wmel.csv")) |> 
   mutate(mosquito = "wmel") |>
@@ -100,13 +98,30 @@ strain_plot <- strain_out |>
             q_0.975_transmissibility = quantile(abundance_weighted_dissem, 0.975)) |>
   ungroup() 
 
-### Plotting ###
+## Plotting 
 
 wol_labels <- c(expression(paste(italic("w"), "AlbB")), expression(paste(italic("w"), "MelM")))
 
-## Panel A - time to reemergence for different R0 and inhibition combinations
+### Panel a - Histogram of relative dissemination  
+panel_a <- inhib_table |> 
+  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM"))) |> 
+  ggplot() +
+  geom_histogram(aes(x = dissemination_norm, fill = mosquito),position = "identity", alpha = 0.5, binwidth = 0.05) +
+  scale_fill_manual(values = c("#b8cc00", "#3b5323"), labels = wol_labels) +
+  scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.02), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
+  theme(legend.position = "right")  +
+  labs(x = NULL, fill = expression(paste(italic("Wolbachia"), " strain")), y = "Frequency") +
+  guides(fill = guide_legend(direction = "vertical")) +
+  theme(plot.margin = margin(10, 5, 10, 15),
+        legend.key.width = unit(0.6, "cm"),
+        legend.key.height = unit(0.6, "cm"),
+        legend.title = element_text(size = 9, family = plot_font),
+        legend.position = c(1, 1),
+        legend.justification = c(1, 1))
 
-# Probability reemergence column
+ggsave(here(figure_path, "panel_a.png"), plot = panel_a, width = 180, height = 120, unit = "mm", dpi = 300)
+
+### Panel c - probability reemergence column
 reemergence_counts <- reemergence_strains |> 
   group_by(serotype_varying, mosquito, r0, p_40) |> 
   summarise(count = n())
@@ -148,26 +163,7 @@ probability_reemergence <- reemergence_strains |>
   
     ggsave(here(figure_path, "panel_c_probability-reemergence_40-years.png"), plot = probability_reemergence, width = 180, height = 120, unit = "mm", dpi = 300)
   
-# Histogram of relative dissemination  
-panel_a <- inhib_table |> 
-  mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM"))) |> 
-  ggplot() +
-  geom_histogram(aes(x = dissemination_norm, fill = mosquito),position = "identity", alpha = 0.5, binwidth = 0.05) +
-  scale_fill_manual(values = c("#b8cc00", "#3b5323"), labels = wol_labels) +
-  scale_x_continuous(breaks = seq(0,1, by = 0.1), limits = c(-0.04,1.02), expand = c(0,0), labels = c("0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")) +
-  theme(legend.position = "right")  +
-  labs(x = NULL, fill = expression(paste(italic("Wolbachia"), " strain")), y = "Frequency") +
-  guides(fill = guide_legend(direction = "vertical")) +
-  theme(plot.margin = margin(10, 5, 10, 15),
-              legend.key.width = unit(0.6, "cm"),
-              legend.key.height = unit(0.6, "cm"),
-              legend.title = element_text(size = 9, family = plot_font),
-              legend.position = c(1, 1),
-              legend.justification = c(1, 1))
-
-ggsave(here(figure_path, "panel_a.png"), plot = panel_a, width = 180, height = 120, unit = "mm", dpi = 300)
-
-# Tile plot of median reemergence times
+### Panel c - tile plot of median reemergence times
 reemergence_plot <- reemergence_quantile |> 
   filter(r0 >= 1) |> 
   mutate(median = case_when(is.na(median) ~ 75, T~ median)) |> 
@@ -192,10 +188,7 @@ legend <- ggpubr::get_legend(reemergence_plot)
 legend_prob <- ggpubr::get_legend(probability_reemergence)
 ggsave(here(figure_path, "panel-c_reemergence-tile.png"), plot = reemergence_plot, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
 
-## Panel C - selection over time
-
-#pal <- c("#435F90", "#7c4b73", "#ed968c", "#e78429") # from Archaumbault in met brewer palette
-
+#### Panel b - selection over time
 plot_times <- c(1,182, 2007, 3832, 7482, 18432, 27192)
 
 panel_labels <- strain_out |> 
@@ -204,9 +197,6 @@ panel_labels <- strain_out |>
   filter(time %in% plot_times) |> 
   mutate(time_label = factor(time, levels = plot_times, labels = c("Pre-release", "6\nmonths", "5\nyears", "10\nyears", "20\nyears", "50\nyears", "75\nyears"))) |> 
   ungroup() 
-
-
-# Panel B
 
 panel_b <- strain_plot |> 
   mutate(mosquito = factor(mosquito, levels = c("walbb", "wmel"), labels = c("wAlbB", "wMelM"))) |> 
@@ -222,14 +212,12 @@ panel_b <- strain_plot |>
   annotate("text", x = as.Date("2024-01-02"), y = 1, label = "n=19", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
   annotate("text", x = as.Date("2030-07-01"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
   annotate("text", x = as.Date("2030-07-01"), y = 1, label = "n=1", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
- # annotate("text", x = as.Date("2035-06-30"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2, family = plot_font) +
- # annotate("text", x = as.Date("2035-06-30"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2, family = plot_font) +
   annotate("text", x = as.Date("2045-06-27"), y = 0.9, label = "n=0", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
-  annotate("text", x = as.Date("2045-06-27"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
-  annotate("text", x = as.Date("2075-06-20"), y = 0.9, label = "n=2", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
-  annotate("text", x = as.Date("2075-06-20"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
-  annotate("text", x = as.Date("2099-06-14"), y = 0.9, label = "n=2", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
-  annotate("text", x = as.Date("2099-06-14"), y = 1, label = "n=2", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2045-06-27"), y = 1, label = "n=1", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2075-06-20"), y = 0.9, label = "n=4", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2075-06-20"), y = 1, label = "n=1", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2099-06-14"), y = 0.9, label = "n=3", col = "#b8cc00", family = plot_font, size = 2.2, family = plot_font) +
+  annotate("text", x = as.Date("2099-06-14"), y = 1, label = "n=1", col = "#3b5323", family = plot_font, size = 2.2, family = plot_font) +
   labs(x = "Date", col = NULL, fill = NULL) + 
   theme(legend.position = "none") 
 
@@ -241,6 +229,6 @@ panel_b <- strain_plot |>
 
   
   figure <- plot_grid(top_row, panel_c, nrow = 2, rel_heights = c(1,2.5), labels = c("", "c"), label_size = 10, label_fontfamily = plot_font)
-  ggsave(here(figure_path, "modelling-fig.png"), plot = figure, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
+  ggsave(here(figure_path, "figure_6.png"), plot = figure, width = 240, height = 180, unit = "mm", dpi = 300, bg = "white")
   
   

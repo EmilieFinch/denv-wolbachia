@@ -1,4 +1,16 @@
-## Run model simulations
+#### Code to run model simulations for re-emergence analysis ####
+
+### This script runs simulations over 75 years assuming different baseline R0 values and Wolbachia inhibition levels using denv-serotype-model in odin
+## The model uses equilibrated states obtained from 01_equilibrate-model. R as initial conditions (with a different set of initial conditions for each stochastic simulation)
+## We assume that a Wolbachia intervention totally inhibits 3 serotypes and partially inhibits the fourth (with the level determined by the user inputted inhib_level parameter)
+## For each combination of R0 and inhibition level, 50 stochastic simulations are run
+## This is then repeated, varying the serotype experiencing partial inhibition (resulting in 200 stochastic simulations per parameter set)
+
+## Outputs saved are: 1) quantiles of simulation outputs, 2) time to extinction and re-emergence for the serotype experiencing partial inhibition
+
+# Note that this script is set up to run on an HPC system as an array job, with the inhibition level passed as a command line argument using the csv files
+# strain-specific-input-values.csv and reemergence-input-values.csv
+
 library(here)
 source(here("code", "00_load-packages.R"))
 source(here("code", "utils.R"))
@@ -7,32 +19,32 @@ ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALS
 figure_path <- here("figures", "simulation", Sys.Date())
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
-# config
+#### config
 set.seed(27)
 n_particles <- 50
 simulation_years <- 75
-c_args = commandArgs(trailingOnly = TRUE)
+#c_args = commandArgs(trailingOnly = TRUE)
 
 r0s <- seq(1,5, by = 0.5)
-inhib_level <- as.numeric(c_args[[1]])
+inhib_level <- 0.2 #as.numeric(c_args[[1]])
 quantiles_save <- data.frame()
 
-# load model
+#### Load model
 denv_mod <- odin2::odin(here("code/denv-serotype-model.R"), debug = TRUE, skip_cache = TRUE)
 
 for(r0 in r0s){ 
 for(serotype_varying in 1:4){ 
-
-  # Prepare model inputs
+start_time <- Sys.time()
+  #### Prepare model inputs
   brazil_demog <- load_demography()
   demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2100, pad_left = 0)
   
-  initial_states <- qread(here("output", "calibration", "2025-06-16", paste0("calibration-states_r0-", r0, ".qs")))
+  initial_states <- qread(here("output", "baseline", "2025-09-10", paste0("serotype_baseline-states_r0-", r0, ".qs")))
   
   wol_inhib <- rep(0,4)
   wol_inhib[serotype_varying] <- inhib_level
   
-  ## Set up model
+  ### Set up model
   start_time <- Sys.time()
   denv_sys <- dust_system_create(denv_mod,
                                  pars = list(n_age = 81,
@@ -60,11 +72,12 @@ for(serotype_varying in 1:4){
   
   cat(paste0("Running simulations for r0: ", r0, " and inhibition level: ", inhib_level, " and serotype: ", serotype_varying, "\n"))
   sim_raw <- dust_system_simulate(denv_sys, t, index_state = idx)
-  
+  print(Sys.time() - start_time)
+ 
   ## Wrangle and save output
   cat(paste0("Saving output for r0: ", r0, " and inhibition level: ", inhib_level, " and serotype: ", serotype_varying, "\n"))
   
-  ### Raw simulations
+  # Raw simulations
   sim_out <- as.data.frame.table(sim_raw) |>
     rename(state = Var1, run = Var2, time = Var3, value = Freq) |>
     mutate(run = as.numeric(run), time = as.numeric(time)) |>
@@ -74,9 +87,7 @@ for(serotype_varying in 1:4){
     left_join(brazil_demog |> group_by(year) |> summarise(population = sum(population))) |> 
     mutate(inc = value/population*100000)
   
-  #qsave(sim_out,here(output_path, paste0("simulation-out_r0-",r0, "_inhib-level-", inhib_level,"_serotype-varying-", serotype_varying, ".qs")))
-  
-  ### Quantiles
+  # Quantiles
   quantiles_out <- sim_out |>
     group_by(state, time, name, level, r0, inhib_level, serotype_varying) |>
     summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
@@ -85,7 +96,7 @@ for(serotype_varying in 1:4){
     left_join(brazil_demog |> group_by(year) |> summarise(population = sum(population))) 
   quantiles_save <- rbind(quantiles_save, quantiles_out)
   
-  ### Time to emergence
+  # Time to emergence
   time_to_emergence <- sim_out |>
     filter(name == "inf") |>
     group_by(name, run, time, inhib_level, r0, serotype_varying) |>

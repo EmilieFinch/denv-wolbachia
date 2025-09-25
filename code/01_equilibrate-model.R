@@ -1,34 +1,37 @@
-# Script to calibrate strain model
-## Calibrating from 1974 until 2024 using dynamic demography for Brazil
+#### Code to calibrate serotype or strain-level compartmental  models ####
+## Equilibrate the model for 100 years using static demography using demographic data for Brazil from 1974 until 2024 
+## and assuming static demography prior to this point
 
 source(here("code", "utils.R"))
 
-calibration_type <- "strain" # can be strain or serotype
-## Set paths
-output_path <- here("output", "calibration", Sys.Date())
-figure_path <- here("figures", "calibration", Sys.Date())
+eq_type <- "strain" # can be strain or serotype
+
+### Set paths
+output_path <- here("output", "baseline", Sys.Date())
+figure_path <- here("figures", "baseline", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 ifelse(!dir.exists(figure_path), dir.create(figure_path, recursive = TRUE), FALSE)
 
-# Prepare model inputs
+### Prepare model inputs
 r0s <- seq(1,5, by = 0.5)
-if(calibration_type == "serotype"){
+
+if(eq_type == "serotype"){
   n_states <- 7522
   n_strains <- 4
   denv_mod <- odin2::odin(here("code/denv-serotype-model.R"), debug = FALSE, skip_cache = TRUE) 
   
-} else if(calibration_type == "strain"){
+} else if(eq_type == "strain"){
   n_states <- 27024
   n_strains <- 20
   denv_mod <- odin2::odin(here("code/denv-strain-model.R"), debug = FALSE, skip_cache = TRUE) 
   
 }
 
-# Start for loops
+### Run equilibration
 
 for(r0 in r0s){ 
-cat(paste0("Running calibration for r0: ", r0, "\n"))
-calibration_states <- matrix(NA, nrow = n_states, ncol = 0)
+cat(paste0("Running model equilibration for r0: ", r0, "\n"))
+baseline_states <- matrix(NA, nrow = n_states, ncol = 0)
 for(sim in 1:50){
 n_particles <- 1
 calibration_years <- 100
@@ -59,8 +62,8 @@ denv_out <- dust_system_simulate(denv_sys, t)
 denv_out <- dust_unpack_state(denv_sys, denv_out)
 
 denv_final <- dust_system_simulate(denv_sys, 365*calibration_years)
-calibration_states <- cbind(calibration_states, denv_final)
-qsave(calibration_states, here(output_path, paste0(calibration_type, "_calibration-states_r0-", r0, ".qs")))
+baseline_states <- cbind(baseline_states, denv_final)
+qsave(baseline_states, here(output_path, paste0(eq_type, "_baseline-states_r0-", r0, ".qs")))
 print(Sys.time() - start_time)
 cat(paste0("Finished simulation: ", sim, "\n"))
 
@@ -97,7 +100,7 @@ serotype_out <- data.frame(prior_denv1 = denv_out$prior_denv1, prior_denv2 = den
 
 ## Check outputs
 
-## Strains over time
+# Strains over time
 strain_plot <- ggplot(inf_out) + 
   geom_line(aes(x = time, y = proportion, col = as.factor(strain), group = as.factor(strain))) +
   labs(x = "Time", y = "Strain prevalence") +
@@ -108,20 +111,20 @@ infection_plot <- ggplot(inf_out) +
   labs(x = "Time", y = "Infections") +
   theme(legend.position = "none")
 
-## Immunity over time
+# Immunity over time
 immune_plot <- ggplot(immune_out) +
   geom_area(aes(x = time, y = proportion,  fill = as.factor(prior_infection), group = as.factor(prior_infection))) +
   labs(x = "Time", y = "Proportion", fill = "Number of prior infections")
 
-## Serotype over time
+# Serotype over time
 serotype_plot <- ggplot(serotype_out) +
   geom_line(aes(x = time, y = proportion, col = name, group = name)) +
   labs(x = "Time", y = "Proportion of the population", color = "Prior serotype immunity")
 
 
-calibration_plots <- ggarrange(infection_plot, strain_plot, immune_plot, serotype_plot, nrow = 4)
-calibration_plots <- annotate_figure(calibration_plots, top= text_grob(paste0("Calibration plots with R0 = ", r0), family = plot_font))
-ggsave(here(figure_path, paste0(calibration_type,"_calibration-plots_r0-", r0, "-sim_", sim, ".png")), width = 180, height = 240, unit = "mm", dpi = 300, plot = calibration_plots)
+baseline_plots <- ggarrange(infection_plot, strain_plot, immune_plot, serotype_plot, nrow = 4)
+baseline_plots <- annotate_figure(baseline_plots, top= text_grob(paste0("Baseline plots with R0 = ", r0), family = plot_font))
+ggsave(here(figure_path, paste0(eq_type,"_baseline-plots_r0-", r0, "-sim_", sim, ".png")), width = 180, height = 240, unit = "mm", dpi = 300, plot = baseline_plots)
 rm(denv_out, denv_final, denv_sys)
 }
 }

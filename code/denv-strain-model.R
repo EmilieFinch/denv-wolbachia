@@ -1,4 +1,5 @@
-#### Definition of discrete time stochastic compartmental model
+#### DENV strain discrete time stochastic compartmental model ####
+
 ### Structure of script
 ## 1. Model parameters
 ## 2. Core equations
@@ -9,15 +10,15 @@
 ## 7. Initial states and dimensions
 
 ### Compartments are stratified by 
-## i for the age group (number of age groups specified by n_age, with age group width specified in size_age)
+## i for the age group (number of age groups specified by n_age)
 ## Compartments C , I and R are also stratified by 
 ## j for immune history
-## Compartment I is also stratified by
-## k for immune history
 ## The levels of this are:
 ## 1, 2, 3, 4, 12, 13, 14, 23, 24, 34, 123, 124, 134, 234, 1234
 ## For I these are different immune history can be 0 and no one with immune history 1234 can be reinfected
 ## 0, 1, 2, 3, 4, 12, 13, 14, 23, 24, 34, 123, 124, 134, 234
+## Compartment I is also stratified by
+## k for current infecting strain
 # Note that we don't keep track of the order of past infections
 
 
@@ -30,7 +31,7 @@ scenario_years <- parameter() # number of years to simulate
 ## Demog & serotype parameters
 n_age <- parameter(80)
 n_histories <- 15
-n_strains <- 20 #total number of strains modelled
+n_strains <- 20 # total number of strains modelled
 r0 <- parameter() # input strain-specific R0 (e.g. each strain has this R0 when introduced alone)
 gamma <- parameter(0.2)
 nu <- parameter(0.002739726)
@@ -45,7 +46,7 @@ amp_seas <- parameter(0.2)
 phase_seas <- parameter(1.56)
 
 ## Wolbachia parameters
-wol_on <- parameter()
+wol_on <- parameter() # parameter indicating whether a wolbachia intervention is being implemented
 wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
 #### Core equations ####
@@ -88,8 +89,6 @@ lambda_total <- sum(lambda[])
 
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
-
-#print("sim_year: {sim_year}, r0_out[12]: {r0_out[12]}, lambda[12]: {lambda[12]}, lambda_total: {lambda_total}, I_example: {I[12,7,20]}")
 
 #### Draw number moving between compartments ####
 ## Note chain binomials for n_SI and n_RI at the end of the script 

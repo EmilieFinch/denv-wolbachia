@@ -1,3 +1,5 @@
+#### Code to load required packages and set up plotting theme
+
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   here, dplyr, janitor, tidyr, readxl, ggplot2,
@@ -14,12 +16,12 @@ if(!require("dust2")) install.packages(
   "dust2",
   repos = c("https://mrc-ide.r-universe.dev", "https://cloud.r-project.org"))
 
-# Set up plot font
+### Set up plot font
 plot_font <- "Arial"
 showtext_opts(dpi = 300)
 showtext_auto()
 
-# Set theme for plotting
+### Set theme for plotting
 theme_set(theme_classic() +
             theme(plot.title = element_text(size = 8, family = plot_font),
                   axis.title = element_text(size = 8, family = plot_font),

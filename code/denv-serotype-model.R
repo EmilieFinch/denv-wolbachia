@@ -1,4 +1,5 @@
-#### Definition of discrete time stochastic compartmental model
+#### DENV serotype discrete time stochastic compartmental model ####
+
 ### Structure of script
 ## 1. Model parameters
 ## 2. Core equations
@@ -9,17 +10,16 @@
 ## 7. Initial states and dimensions
 
 ### Compartments are stratified by 
-## i for the age group (number of age groups specified by n_age, with age group width specified in size_age)
+## i for the age group (number of age groups specified by n_age)
 ## Compartments C , I and R are also stratified by 
 ## j for immune history
-## Compartment I is also stratified by
-## k for immune history
 ## The levels of this are:
 ## 1, 2, 3, 4, 12, 13, 14, 23, 24, 34, 123, 124, 134, 234, 1234
 ## For I these are different immune history can be 0 and no one with immune history 1234 can be reinfected
 ## 0, 1, 2, 3, 4, 12, 13, 14, 23, 24, 34, 123, 124, 134, 234
-# Note that we don't keep track of the order of past infections
-
+# Note that we don't keep track of the order of past infections (so 1 then 2 then 3 is stored in the same history compartment as 3 then 2 then 1 etc)
+## Compartment I is also stratified by
+## k for current infecting serotypes
 
 #### User-input model parameters ####
 ## Time-keeping
@@ -30,7 +30,7 @@ scenario_years <- parameter() # number of years to simulate
 ## Demog & serotype parameters
 n_age <- parameter(80)
 n_histories <- 15
-n_strains <- 4 #total number of strains modelled
+n_strains <- 4 # total number of strains modelled
 r0 <- parameter() # input strain-specific R0 (e.g. each strain has this R0 when introduced alone)
 gamma <- parameter(0.2)
 nu <- parameter(0.002739726)
@@ -45,11 +45,11 @@ amp_seas <- parameter(0.2)
 phase_seas <- parameter(1.56)
 
 ## Wolbachia parameters
-wol_on <- parameter()
+wol_on <- parameter() # parameter indicating whether a wolbachia intervention is being implemented
 wol_inhib <- parameter() # level of wolbachia inhibition (by strain)
 
 #### Core equations ####
-update(S[]) <- floor((if(i == 1 && ageing_day) births[day_of_year + 1] else 
+update(S[]) <- floor((if(i == 1 && ageing_day) births[day_of_year] else 
   if(i == 1) births[day_of_year] + S[i] - S_out[i] else
   if(ageing_day && i > 1) S[i-1] - S_out[i-1] else
   S[i] - S_out[i]) * shift[i])
@@ -81,7 +81,6 @@ lambda_local[] <- beta_adj[i] * sum(I[,,i])/sum(N[])  # strain specific lambda
 
 lambda[] <- if(seasonality == 1) lambda_local[i] * (1 + amp_seas * cos(2 * 3.14159 * time/365 - phase_seas)) + ext_foi else lambda_local[i] + ext_foi # add seasonality to lambda
 lambda_total <- sum(lambda[])
-
 
 p_IC <- 1 - exp(-gamma*dt) # I to C
 p_CR <- 1 - exp(-nu*dt) # C to R
@@ -143,16 +142,16 @@ update(inf[]) <- sum(I[,,i])
 update(inf_age[]) <- sum(I[i,,])
 
 ## Immune states
-update(prior_infection[1]) <- sum(S[])
-update(prior_infection[2]) <- sum(R[,1:4])
-update(prior_infection[3]) <- sum(R[,5:10])
-update(prior_infection[4]) <- sum(R[,11:14])
-update(prior_infection[5]) <- sum(R[,15])
+update(prior_infection[1]) <- sum(S[]) # sum seronaitve
+update(prior_infection[2]) <- sum(R[,1:4]) # sum one previous infection
+update(prior_infection[3]) <- sum(R[,5:10]) # sum two previous infections
+update(prior_infection[4]) <- sum(R[,11:14]) # sum three previous infections
+update(prior_infection[5]) <- sum(R[,15]) # sum four previous infections
 
-update(prior_denv1) <-sum(R[, 1]) + sum(R[, 5]) + sum(R[, 6]) + sum(R[, 7]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 15])
-update(prior_denv2) <- sum(R[, 2]) + sum(R[, 5]) + sum(R[, 8]) + sum(R[, 9]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 14]) + sum(R[, 15])
-update(prior_denv3) <- sum(R[, 3]) + sum(R[, 6]) + sum(R[, 8]) + sum(R[, 10]) + sum(R[, 11]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15])
-update(prior_denv4) <- sum(R[, 4]) + sum(R[, 7]) + sum(R[, 9]) + sum(R[, 10]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15])
+update(prior_denv1) <-sum(R[, 1]) + sum(R[, 5]) + sum(R[, 6]) + sum(R[, 7]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 15]) # sum all those with immunity to DENV-1
+update(prior_denv2) <- sum(R[, 2]) + sum(R[, 5]) + sum(R[, 8]) + sum(R[, 9]) + sum(R[, 11]) + sum(R[, 12]) + sum(R[, 14]) + sum(R[, 15]) # sum all those with immunity to DENV-2
+update(prior_denv3) <- sum(R[, 3]) + sum(R[, 6]) + sum(R[, 8]) + sum(R[, 10]) + sum(R[, 11]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15]) # sum all those with immunity to DENV-3
+update(prior_denv4) <- sum(R[, 4]) + sum(R[, 7]) + sum(R[, 9]) + sum(R[, 10]) + sum(R[, 12]) + sum(R[, 13]) + sum(R[, 14]) + sum(R[, 15]) # sum all those with immunity to DENV-4
 
 
 #### Initial states & dimensions ####

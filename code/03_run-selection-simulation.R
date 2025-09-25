@@ -1,26 +1,38 @@
-# Run selection simulation
+#### Code to run model simulations for strain selection analysis ####
+
+### This script runs simulations over 75 years assuming different baseline R0 values using denv-strain-model in odin
+## Inputs:
+# The model uses equilibrated states obtained from 01_equilibrate-model. R as initial conditions (with a different set of initial conditions for each stochastic simulation)
+# User inputs: r0 level and Wolbachia strain (wmel or walbb)
+## We then draw 5 strains are drawn for each serotype from the dataset along with their corresponding relative dissemination under the Wolbachia strain (resulting in 20 strains in total within the model)
+## We then simulate strain dynamics over 75 years following Wolbachia introduction 
+## Outputs saved are: 1) quantiles of simulation outputs, 2) a csv of the proportion of infections belonging to each strain over the simulation period
+
+# Note that this script is set up to run on an HPC system as an array job, with the inhibition level passed as a command line argument using the csv files
+# strain-specific-input-values.csv and reemergence-input-values.csv
+
 library(here)
 source(here("code", "00_load-packages.R"))
 source(here("code", "utils.R"))
 output_path <- here("output", "simulation", Sys.Date())
 ifelse(!dir.exists(output_path), dir.create(output_path, recursive = TRUE), FALSE)
 
-# config
+#### config
 set.seed(27)
-c_args = commandArgs(trailingOnly = TRUE)
+#c_args = commandArgs(trailingOnly = TRUE)
 
-r0 <-as.numeric(c_args[[1]])
-mosquito <-as.character(c_args[[2]])
+r0 <- 2 #as.numeric(c_args[[1]])
+mosquito <- "wmel" #as.character(c_args[[2]])
 n_particles <- 50
 simulation_years <- 75
 
-# load model
+#### Load model
 denv_mod <- odin2::odin(here("code/denv-strain-model.R"), debug = TRUE, skip_cache = TRUE)
 
-# Prepare model inputs
+#### Prepare model inputs
 brazil_demog <- load_demography()
 demog <- wrangle_demography(brazil_demog, year_start = 2025, year_end = 2100, pad_left = 0)
-initial_states <- qread(here("output", "calibration", "2025-06-18", paste0("strain_calibration-states_r0-", r0, ".qs")))
+initial_states <- qread(here("output", "baseline", "2025-09-10", paste0("strain_baseline-states_r0-", r0, ".qs")))
 
 inhib_table <- qread(here("data", paste0(mosquito, "-inhib.qs")))
 
@@ -33,7 +45,7 @@ for(draw in 1:20){
   inhib_values <- inhib_selected |>
     pull(dissemination_norm)
   
-  ## Set up model
+  ### Set up model
   start_time <- Sys.time()
   denv_sys <- dust_system_create(denv_mod,
                                  pars = list(n_age = 81,
@@ -65,16 +77,14 @@ for(draw in 1:20){
   ## Wrangle and save output
   cat(paste0("Saving simulation output"))
   
-  ### Raw simulations
+  # Raw simulations
   sim_out <- as.data.frame.table(sim_raw) |>
     rename(state = Var1, run = Var2, time = Var3, value = Freq) |>
     mutate(run = as.numeric(run), time = as.numeric(time)) |>
     extract(state, into = c("name", "level"), regex = "([a-zA-Z]+)([0-9]+)", remove = FALSE) |>
     mutate(draw = draw, mosquito = mosquito)
   
-  #qsave(sim_out,here(output_path, paste0("strain-simulation-out.qs")))
-  
-  ### Quantiles
+  # Quantiles
   quantiles_out <- sim_out |>
     group_by(state, name, level, time, draw, mosquito) |>
     summarise(median = median(value), q_0.25 = quantile(value, 0.25), q_0.75 = quantile(value, 0.75),
@@ -84,12 +94,9 @@ for(draw in 1:20){
     
   qsave(quantiles_out, here(output_path, paste0("strain-quantile-out_", mosquito, "_", draw,".qs")))
   
-  # Aim: data frame with the proportion of each of the strains in each run
-  # Then plot these with colours for serotypes and total n for time periods: pre-release (calibration state), after 5 years, 20 years, 50 years 75 years
-  
   plot_times <-c(1, as.vector(outer(c(182, 365), 0:74 * 365, "+")))
-
-    
+ 
+  # Proportions of infections by strain
   inf_proportions <- sim_out |>
     filter(name == "inf") |>
     filter(time %in% plot_times) |>

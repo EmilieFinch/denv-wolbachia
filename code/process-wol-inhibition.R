@@ -1,10 +1,8 @@
-# Script to process experimental data
-set.seed(84)
-yale_results <- read_xlsx(here("data", "DENV1-4_Salje_format_08.26.2025.xlsx")) |> 
-  clean_names() |> 
-  arrange(serotype)
+# Code to process experimental data for transmission model
 
-dissemination_rates_new <- yale_results |> 
+dissemination_rates <- read_xlsx(here("data", "DENV1-4_08.26.2025.xlsx")) |> 
+  clean_names() |> 
+  arrange(serotype) |> 
   group_by(mosquito_strain, virus) |> 
   mutate(group_id = cur_group_id()) |> 
   group_by(mosquito_strain, virus, serotype, genotype) |> 
@@ -30,12 +28,12 @@ walbb_out <- dissemination_rates |>
 qsave(walbb_out, here("data", "walbb-inhib.qs"))
 
 
-  dissemination_out <- dissemination_rates |> 
-    select(dissemination_norm) |> 
-    mutate(dissemination_norm = round(dissemination_norm, 3)) |> 
-    rename(dissemination = dissemination_norm) |> 
-    filter(!is.na(dissemination)) |> 
-    unique() |> 
-    arrange(dissemination)
+dissemination_out <- dissemination_rates |> 
+  select(dissemination_norm) |> 
+  mutate(dissemination_norm = round(dissemination_norm, 3)) |> 
+  rename(dissemination = dissemination_norm) |> 
+  filter(!is.na(dissemination)) |> 
+  unique() |> 
+  arrange(dissemination)
     
 write.csv(dissemination_out, here("data", "strain-specific-input-values.csv"))
